@@ -336,10 +336,3 @@ mounted. That is the guard doing its job — mount it, or unset
 
 **Images 404 after a restore.** The database and store must be restored
 together.
-
-\---
-
-## Licence
-
-MIT. See [LICENSE](LICENSE).
-
