@@ -1,19 +1,3 @@
-<!--
-Copyright 2026 Alexander L. Penny
-
-Licensed under the Apache License, Version 2.0 (the "License");
-you may not use this file except in compliance with the License.
-You may obtain a copy of the License at
-
-    http://www.apache.org/licenses/LICENSE-2.0
-
-Unless required by applicable law or agreed to in writing, software
-distributed under the License is distributed on an "AS IS" BASIS,
-WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-See the License for the specific language governing permissions and
-limitations under the License.
--->
-
 # contactsheet
 
 A small self-hosted image host. Upload an image, get a short address you can
@@ -22,6 +6,8 @@ paste anywhere:
 ```
 https://example.com/images/kivuhRjaTZ
 ```
+
+<img width="1900" height="945" alt="Screenshot 2026-07-18 214938" src="https://github.com/user-attachments/assets/f81d6346-a137-490b-a0ba-b7c80d65ed90" />
 
 The admin panel lives at `/images` behind a login. The images themselves are
 served from `/images/<id>` with no authentication — unless you mark them
