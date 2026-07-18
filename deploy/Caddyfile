@@ -1,0 +1,23 @@
+# Merge the `handle /images*` block into your EXISTING example.com site
+# block in /etc/caddy/Caddyfile. Do not replace the whole file -- you have
+# gitea and filebrowser routes already.
+
+example.com {
+
+	# --- Image host -----------------------------------------------------
+	handle /images* {
+		# Uploads need headroom above the app's own 12 MB per-file limit.
+		request_body {
+			max_size 15MB
+		}
+
+		reverse_proxy 127.0.0.1:3021 {
+			# Pass Cloudflare's client IP through unchanged. The app reads
+			# CF-Connecting-IP and writes it to the log fail2ban watches.
+			header_up CF-Connecting-IP {header.CF-Connecting-IP}
+			header_up X-Real-IP {header.CF-Connecting-IP}
+		}
+	}
+
+	# ... your existing gitea / filebrowser / site routes stay as they are ...
+}

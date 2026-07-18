@@ -1,0 +1,12 @@
+# /etc/logrotate.d/contactsheet
+/var/lib/contactsheet/log/auth.log {
+    weekly
+    rotate 12
+    compress
+    delaycompress
+    missingok
+    notifempty
+    create 0640 contactsheet adm
+    # The app holds the file open, so copy-truncate rather than renaming.
+    copytruncate
+}

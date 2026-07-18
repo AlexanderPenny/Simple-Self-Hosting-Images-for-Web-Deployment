@@ -1,0 +1,47 @@
+# /etc/fail2ban/jail.d/contactsheet.local
+#
+# No [DEFAULT] section here on purpose. Your existing /etc/fail2ban/jail.local
+# already sets findtime/bantime/maxretry/ignoreip; a second [DEFAULT] would
+# fight with it. These jails inherit yours and override only what they need.
+#
+# BEFORE ENABLING:
+#   1. Add your own IP to ignoreip in your jail.local, or a few mistyped
+#      passwords will lock you out of your own admin panel.
+#   2. Choose the right banaction below.
+
+[contactsheet]
+enabled  = true
+filter   = contactsheet
+logpath  = /var/lib/contactsheet/log/auth.log
+port     = http,https
+
+# Directly exposed origin (no CDN in front): iptables is correct.
+banaction = iptables-multiport
+# Behind Cloudflare (tunnel or proxied DNS): EVERY connection arrives from
+# localhost, so an iptables ban blocks nothing. Comment out the line above and
+# uncomment this one instead.
+#banaction = cloudflare-zone
+# Using nftables rather than iptables:
+#banaction = nftables-multiport
+
+maxretry = 5
+findtime = 10m
+bantime  = 4h
+# Repeat offenders get progressively longer bans: 4h, 8h, 16h ... up to a week.
+bantime.increment = true
+bantime.factor    = 2
+bantime.maxtime   = 1w
+
+
+# Catches scanners probing /images/wp-login.php and friends before they ever
+# reach the login form. Point logpath at your reverse proxy's access log.
+[contactsheet-probe]
+enabled  = true
+filter   = contactsheet-probe
+logpath  = /var/log/caddy/access.log
+port     = http,https
+banaction = iptables-multiport
+#banaction = cloudflare-zone
+maxretry = 20
+findtime = 5m
+bantime  = 2h

@@ -1,0 +1,33 @@
+{
+  "name": "contactsheet",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "description": "Self-hosted image host with short public addresses, per-image privacy, and fail2ban protection",
+  "main": "src/server.js",
+  "scripts": {
+    "start": "node src/server.js",
+    "adduser": "node scripts/adduser.js",
+    "passwd": "node scripts/passwd.js",
+    "lsusers": "node scripts/lsusers.js",
+    "test": "bash test/smoke.sh"
+  },
+  "engines": {
+    "node": ">=20"
+  },
+  "dependencies": {
+    "better-sqlite3": "^11.5.0",
+    "cookie-parser": "^1.4.7",
+    "express": "^4.21.1",
+    "multer": "^2.2.0"
+  },
+  "keywords": [
+    "image-host",
+    "self-hosted",
+    "image-upload",
+    "fail2ban",
+    "caddy",
+    "raspberry-pi"
+  ],
+  "license": "MIT"
+}

@@ -1,0 +1,57 @@
+# /etc/systemd/system/contactsheet.service
+[Unit]
+Description=example.com image host
+After=network.target
+# Do not start until the USB drive is actually mounted. EDIT to match.
+RequiresMountsFor=/mnt/usb
+
+[Service]
+Type=simple
+User=contactsheet
+Group=contactsheet
+WorkingDirectory=/opt/contactsheet
+ExecStart=/usr/bin/node src/server.js
+Restart=on-failure
+RestartSec=5
+
+Environment=NODE_ENV=production
+Environment=PORT=3021
+Environment=BIND_HOST=127.0.0.1
+Environment=PUBLIC_ORIGIN=https://example.com
+Environment=DATA_DIR=/var/lib/contactsheet
+# Image files go on the USB drive; the SD card keeps only the small
+# database and logs. EDIT THIS to your real mountpoint.
+Environment=STORE_DIR=/mnt/usb/contactsheet/store
+Environment=REQUIRE_STORE_MARKER=true
+Environment=TRUST_PROXY=true
+Environment=PROXY_HOPS=2
+Environment=TRUST_CLOUDFLARE=true
+Environment=MAX_UPLOAD_BYTES=12582912
+Environment=MAX_FILES_PER_UPLOAD=10
+# Generate with: openssl rand -base64 48
+EnvironmentFile=/etc/contactsheet.env
+
+# Hardening: the service can only write to its own data directory.
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=true
+ReadWritePaths=/var/lib/contactsheet /mnt/usb/contactsheet
+ProtectKernelTunables=true
+ProtectKernelModules=true
+ProtectControlGroups=true
+RestrictAddressFamilies=AF_INET AF_INET6 AF_UNIX
+RestrictNamespaces=true
+LockPersonality=true
+MemoryDenyWriteExecute=false
+SystemCallFilter=@system-service
+SystemCallErrorNumber=EPERM
+
+# 905 MB total RAM on this Pi with gitea, filebrowser, caddy and
+# cloudflared already resident. Keep this service on a short leash.
+MemoryHigh=160M
+MemoryMax=224M
+CPUWeight=40
+
+[Install]
+WantedBy=multi-user.target
