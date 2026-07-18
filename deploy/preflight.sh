@@ -1,4 +1,18 @@
 #!/usr/bin/env bash
+# Copyright 2026 Alexander L. Penny
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#     http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+
 # Run on the Pi BEFORE installing:  sudo bash preflight.sh
 echo "=== 1. Free port? (3021 must be empty; 3000 is likely Gitea) ==="
 ss -tlnp | grep -E ':(3000|3021)\b' || echo "  3000 and 3021 both free"
