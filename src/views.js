@@ -12,7 +12,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-import { formatBytes } from './images.js';
+import { formatBytes, VIDEO_EXTS } from './images.js';
 
 export function escapeHtml(value) {
   return String(value ?? '').replace(/[&<>"']/g, (c) => (
@@ -156,9 +156,16 @@ input:focus{border-color:var(--safelight)}
 export function dashboardPage({ user, images, stats, csrf, origin, page, hasNext, search = '', siteName = '' }) {
   const frames = images.map((img, i) => {
     const n = String((page * 60) + i + 1).padStart(3, '0');
-    const url = `${origin}/images/${img.id}`;
+    const isVideo = VIDEO_EXTS.includes(img.ext);
+    // Link the extension on so a pasted/copied address plays or displays
+    // correctly wherever it lands, rather than relying on the server's
+    // fallback content sniffing.
+    const url = `${origin}/images/${img.id}.${img.ext}`;
     const dims = img.width && img.height ? `${img.width}&times;${img.height}` : '&mdash;';
     const priv = img.visibility === 'private';
+    const preview = isVideo
+      ? `<video src="/images/${escapeHtml(img.id)}" muted playsinline preload="metadata"></video>`
+      : `<img src="/images/${escapeHtml(img.id)}" alt="${escapeHtml(img.title || img.original_name || img.id)}" loading="lazy">`;
     return `
     <figure class="frame ${priv ? 'is-private' : ''}" data-id="${escapeHtml(img.id)}">
       <div class="frame__no mono">
@@ -166,7 +173,7 @@ export function dashboardPage({ user, images, stats, csrf, origin, page, hasNext
         <span class="tag ${priv ? 'tag--private' : 'tag--public'}">${priv ? 'Private' : 'Public'}</span>
       </div>
       <a class="frame__img" href="/images/${escapeHtml(img.id)}" target="_blank" rel="noopener">
-        <img src="/images/${escapeHtml(img.id)}" alt="${escapeHtml(img.title || img.original_name || img.id)}" loading="lazy">
+        ${preview}
       </a>
       <figcaption>
         <input class="frame__title" value="${escapeHtml(img.title || '')}"
@@ -255,7 +262,7 @@ h1{font:700 32px/1 "IBM Plex Sans Condensed",sans-serif;margin:8px 0 0;letter-sp
   padding:7px 10px 5px;border-bottom:1px solid var(--rule);
 }
 .frame__img{display:block;background:#e6e9e2;aspect-ratio:4/3;overflow:hidden}
-.frame__img img{width:100%;height:100%;object-fit:contain;display:block}
+.frame__img img,.frame__img video{width:100%;height:100%;object-fit:contain;display:block}
 figcaption{padding:10px;display:flex;flex-direction:column;gap:8px}
 .frame__url{
   width:100%;padding:6px 7px;font-size:11.5px;border:1px solid var(--rule);
@@ -358,8 +365,8 @@ figcaption{padding:10px;display:flex;flex-direction:column;gap:8px}
 
   <section class="drop" id="drop">
     <h2>Add images</h2>
-    <p>Drop files here, paste from the clipboard, or choose them manually. PNG, JPEG, GIF, WebP and AVIF.</p>
-    <input type="file" id="file" multiple accept="image/png,image/jpeg,image/gif,image/webp,image/avif">
+    <p>Drop files here, paste from the clipboard, or choose them manually. PNG, JPEG, GIF, WebP, AVIF, MP4 and WebM.</p>
+    <input type="file" id="file" multiple accept="image/png,image/jpeg,image/gif,image/webp,image/avif,video/mp4,video/webm">
     <input class="drop__title" id="uptitle" type="text" maxlength="120"
            placeholder="Title (optional &mdash; defaults to the filename)" aria-label="Title for new uploads">
     <div class="drop__controls">
@@ -413,8 +420,10 @@ figcaption{padding:10px;display:flex;flex-direction:column;gap:8px}
   function say(msg, kind){ status.textContent = msg; status.className = kind || ''; }
 
   function upload(files){
-    files = Array.prototype.slice.call(files).filter(function(f){ return f.type.indexOf('image/') === 0; });
-    if (!files.length) { say('Those files are not images.', 'err'); return; }
+    files = Array.prototype.slice.call(files).filter(function(f){
+      return f.type.indexOf('image/') === 0 || f.type.indexOf('video/') === 0;
+    });
+    if (!files.length) { say('Those files are not images or videos.', 'err'); return; }
     var fd = new FormData();
     var picked = document.querySelector('input[name=vis]:checked');
     fd.append('visibility', picked ? picked.value : 'public');

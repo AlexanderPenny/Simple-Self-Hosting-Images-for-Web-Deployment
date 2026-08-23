@@ -15,7 +15,7 @@ private, which you can do per image.
 
 Built for a Raspberry Pi sitting behind Caddy, but nothing in it is Pi-specific.
 
-\---
+---
 
 ## What you get
 
@@ -31,7 +31,7 @@ stays on the system disk — worth doing if you are running from an SD card.
 * **No build step, few dependencies.** Express, multer, better-sqlite3,
 cookie-parser. Server-rendered HTML, no framework, no bundler.
 
-\---
+---
 
 ## Requirements
 
@@ -40,7 +40,7 @@ cookie-parser. Server-rendered HTML, no framework, no bundler.
 * Linux with systemd, if you want the supplied service unit
 * fail2ban, optional but recommended
 
-\---
+---
 
 ## Quick start
 
@@ -49,20 +49,20 @@ git clone https://github.com/YOURNAME/contactsheet.git
 cd contactsheet
 npm install --omit=dev
 
-SESSION\_SECRET=$(openssl rand -base64 48) \\
-DATA\_DIR=./data \\
+SESSION_SECRET=$(openssl rand -base64 48) \
+DATA_DIR=./data \
 npm start
 ```
 
 Create a user in a second terminal, then open [http://localhost:3021/images](http://localhost:3021/images):
 
 ```bash
-DATA\_DIR=./data node scripts/adduser.js yourname
+DATA_DIR=./data node scripts/adduser.js yourname
 ```
 
 That is enough to try it. For a real deployment, keep reading.
 
-\---
+---
 
 ## Production install
 
@@ -85,11 +85,11 @@ Caddy, merged into your existing site block:
 
 ```
 example.com {
-	handle /images\* {
-		request\_body {
-			max\_size 15MB
+	handle /images* {
+		request_body {
+			max_size 15MB
 		}
-		reverse\_proxy 127.0.0.1:3021
+		reverse_proxy 127.0.0.1:3021
 	}
 
 	# ... your existing routes ...
@@ -103,8 +103,8 @@ Behind Cloudflare, pass the real visitor address through so bans hit the right
 IP:
 
 ```
-	reverse\_proxy 127.0.0.1:3021 {
-		header\_up CF-Connecting-IP {header.CF-Connecting-IP}
+	reverse_proxy 127.0.0.1:3021 {
+		header_up CF-Connecting-IP {header.CF-Connecting-IP}
 	}
 ```
 
@@ -112,11 +112,11 @@ nginx equivalent:
 
 ```nginx
 location /images {
-	proxy\_pass http://127.0.0.1:3021;
-	proxy\_set\_header Host $host;
-	proxy\_set\_header X-Forwarded-For $proxy\_add\_x\_forwarded\_for;
-	proxy\_set\_header X-Forwarded-Proto $scheme;
-	client\_max\_body\_size 15M;
+	proxy_pass http://127.0.0.1:3021;
+	proxy_set_header Host $host;
+	proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+	proxy_set_header X-Forwarded-Proto $scheme;
+	client_max_body_size 15M;
 }
 ```
 
@@ -146,45 +146,45 @@ sudo fail2ban-client status contactsheet
 Verify the filter matches your actual logs before trusting it:
 
 ```bash
-sudo fail2ban-regex /var/lib/contactsheet/log/auth.log \\
+sudo fail2ban-regex /var/lib/contactsheet/log/auth.log \
   /etc/fail2ban/filter.d/contactsheet.conf
 ```
 
 |Jail|Watches|Trigger|Ban|
 |-|-|-|-|
 |`contactsheet`|app auth log|5 failed logins in 10 min|4 h, doubling on repeat, max 1 week|
-|`contactsheet-probe`|proxy access log|20 × 401/403/404 on `/images\*` in 5 min|2 h|
+|`contactsheet-probe`|proxy access log|20 × 401/403/404 on `/images*` in 5 min|2 h|
 
 The app also throttles in-process: after 10 failures from one IP in 15 minutes
 it stops checking passwords entirely and returns 429, so a burst cannot burn CPU
 on password hashing in the seconds before fail2ban reacts.
 
-\---
+---
 
 ## Configuration
 
-Everything is environment variables. In production put `SESSION\_SECRET` in a
+Everything is environment variables. In production put `SESSION_SECRET` in a
 file readable only by root, e.g. `/etc/contactsheet.env`.
 
 |Variable|Default|Meaning|
 |-|-|-|
-|`SESSION\_SECRET`|*(required)*|HMAC key for session cookies. `openssl rand -base64 48`|
+|`SESSION_SECRET`|*(required)*|HMAC key for session cookies. `openssl rand -base64 48`|
 |`PORT`|`3021`|Port to listen on|
-|`BIND\_HOST`|`127.0.0.1`|Keep on loopback so only the proxy can reach it|
-|`PUBLIC\_ORIGIN`|*(derived)*|e.g. `https://example.com`. Derived from the request if unset|
-|`SITE\_NAME`|`Image store`|Shown on the login page and in page titles|
-|`DATA\_DIR`|`/var/lib/contactsheet`|Database and logs|
-|`STORE\_DIR`|`$DATA\_DIR/store`|Image files. Point at a separate disk if you like|
-|`REQUIRE\_STORE\_MARKER`|`false`|Refuse to start if the store is not mounted|
-|`MAX\_UPLOAD\_BYTES`|`12582912`|Per-file limit (12 MB)|
-|`MAX\_FILES\_PER\_UPLOAD`|`10`|Files per submission|
-|`ID\_LENGTH`|`10`|Characters in a generated ID|
-|`TRUST\_PROXY`|`true`|Read the client IP from proxy headers|
-|`PROXY\_HOPS`|`2`|Proxies in front. Caddy alone is 1; Cloudflare Tunnel → Caddy is 2|
-|`TRUST\_CLOUDFLARE`|`true`|Use `CF-Connecting-IP`. **Set false if the origin is reachable without Cloudflare**|
-|`LOGIN\_MAX\_ATTEMPTS`|`10`|In-process throttle threshold|
+|`BIND_HOST`|`127.0.0.1`|Keep on loopback so only the proxy can reach it|
+|`PUBLIC_ORIGIN`|*(derived)*|e.g. `https://example.com`. Derived from the request if unset|
+|`SITE_NAME`|`Image store`|Shown on the login page and in page titles|
+|`DATA_DIR`|`/var/lib/contactsheet`|Database and logs|
+|`STORE_DIR`|`$DATA_DIR/store`|Image files. Point at a separate disk if you like|
+|`REQUIRE_STORE_MARKER`|`false`|Refuse to start if the store is not mounted|
+|`MAX_UPLOAD_BYTES`|`12582912`|Per-file limit (12 MB)|
+|`MAX_FILES_PER_UPLOAD`|`10`|Files per submission|
+|`ID_LENGTH`|`10`|Characters in a generated ID|
+|`TRUST_PROXY`|`true`|Read the client IP from proxy headers|
+|`PROXY_HOPS`|`2`|Proxies in front. Caddy alone is 1; Cloudflare Tunnel → Caddy is 2|
+|`TRUST_CLOUDFLARE`|`true`|Use `CF-Connecting-IP`. **Set false if the origin is reachable without Cloudflare**|
+|`LOGIN_MAX_ATTEMPTS`|`10`|In-process throttle threshold|
 
-\---
+---
 
 ## Managing users
 
@@ -204,7 +204,7 @@ sudo -u contactsheet node scripts/adduser.js alice
 There is no signup page and no password reset by design — this is meant for a
 handful of people you know.
 
-\---
+---
 
 ## Storing images on a separate disk
 
@@ -217,10 +217,10 @@ sudo bash deploy/setup-store.sh /mnt/storage
 
 That creates the directory, sets ownership, and writes a `.store-ok` marker.
 
-**The marker is not decoration.** If the disk is not mounted, `STORE\_DIR` still
+**The marker is not decoration.** If the disk is not mounted, `STORE_DIR` still
 exists as an empty directory on the system disk underneath. Without the marker
 the service would start, write images to the wrong disk, and appear to lose them
-when the drive came back. With `REQUIRE\_STORE\_MARKER=true` it refuses to start
+when the drive came back. With `REQUIRE_STORE_MARKER=true` it refuses to start
 instead.
 
 Add the disk to `/etc/fstab` with `nofail` so it remounts on boot without
@@ -232,7 +232,7 @@ UUID=xxxx-xxxx  /mnt/storage  ext4  defaults,nofail,x-systemd.device-timeout=10 
 
 Use a filesystem with POSIX ownership — ext4 is fine, exFAT and NTFS are not.
 
-\---
+---
 
 ## Public and private images
 
@@ -255,7 +255,7 @@ Intended, but surprising if you forget.
 * **Private is access control, not encryption.** Anyone with server access, and
 any other signed-in user, can read the file.
 
-\---
+---
 
 ## Security notes
 
@@ -265,7 +265,12 @@ which accounts exist.
 
 **Uploads** are identified by their leading magic bytes, not the filename or the
 browser-supplied `Content-Type`. A PHP script renamed to `.png` is rejected.
-Accepted: PNG, JPEG, GIF, WebP, AVIF.
+Accepted: PNG, JPEG, GIF, WebP, AVIF, MP4, WebM.
+
+Video files are typically much larger than images. The default
+`MAX_UPLOAD_BYTES` (12 MB) suits an images-only deployment; if you want to
+accept clips, raise it — and raise your reverse proxy's body-size limit to
+match, since that applies first (see Troubleshooting).
 
 **SVG is deliberately not accepted.** An SVG can contain JavaScript; served from
 your own domain it would run in your origin, where it could read an admin
@@ -281,7 +286,7 @@ public image. Treat it like a Google Drive "anyone with the link" share.
 Found a security problem? Open an issue, or email the maintainer for anything
 sensitive rather than filing publicly.
 
-\---
+---
 
 ## Backups
 
@@ -289,17 +294,17 @@ The database and the image files must be backed up together — a row without it
 file, or a file without its row, is invisible.
 
 ```bash
-sudo -u contactsheet sqlite3 /var/lib/contactsheet/images.db \\
+sudo -u contactsheet sqlite3 /var/lib/contactsheet/images.db \
   ".backup '/tmp/contactsheet-db.sqlite'"
 
-tar czf contactsheet-$(date +%F).tar.gz \\
-  /tmp/contactsheet-db.sqlite "$STORE\_DIR"
+tar czf contactsheet-$(date +%F).tar.gz \
+  /tmp/contactsheet-db.sqlite "$STORE_DIR"
 ```
 
 Use `.backup` rather than copying the file — the database runs in WAL mode and a
 plain copy can be inconsistent.
 
-\---
+---
 
 ## Upgrading
 
@@ -310,15 +315,15 @@ sudo systemctl restart contactsheet
 ```
 
 Schema changes are applied automatically at startup and logged as
-`\[migration] …`. New columns are added with defaults that preserve existing
+`[migration] …`. New columns are added with defaults that preserve existing
 behaviour — an upgrade never changes who can see what.
 
-\---
+---
 
 ## Troubleshooting
 
 **fail2ban bans `127.0.0.1` instead of the attacker.** The app is not seeing the
-forwarded address. Check `TRUST\_PROXY`, `PROXY\_HOPS` and `TRUST\_CLOUDFLARE`, then
+forwarded address. Check `TRUST_PROXY`, `PROXY_HOPS` and `TRUST_CLOUDFLARE`, then
 watch `tail -f /var/lib/contactsheet/log/auth.log` while submitting a wrong
 password from a phone on mobile data.
 
@@ -327,14 +332,17 @@ Behind Cloudflare, `iptables` bans block the tunnel, not the visitor. Switch
 `banaction` to `cloudflare-zone`.
 
 **Uploads fail with 413.** The reverse proxy's body limit is below the app's.
-Raise `request\_body max\_size` (Caddy) or `client\_max\_body\_size` (nginx).
+Raise `request_body max_size` (Caddy) or `client_max_body_size` (nginx) to at
+least `MAX_UPLOAD_BYTES` — the proxy's limit applies to the whole request
+body, not one file at a time, so if you allow multiple files per submission
+size it for a full batch, not a single file.
 
 **`/images` returns your site's 404.** A catch-all route is matching first. Move
 the `/images` block above it.
 
 **Service will not start, "Store marker missing".** The store disk is not
 mounted. That is the guard doing its job — mount it, or unset
-`REQUIRE\_STORE\_MARKER`.
+`REQUIRE_STORE_MARKER`.
 
 **Images 404 after a restore.** The database and store must be restored
 together.

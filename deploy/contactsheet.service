@@ -61,8 +61,10 @@ MemoryDenyWriteExecute=false
 SystemCallFilter=@system-service
 SystemCallErrorNumber=EPERM
 
-# 905 MB total RAM on this Pi with gitea, filebrowser, caddy and
-# cloudflared already resident. Keep this service on a short leash.
+# Conservative limits suited to a resource-constrained board (e.g. a
+# Raspberry Pi) running other services alongside this one. Tune these to
+# your own device's available RAM -- there is nothing magic about the
+# numbers below.
 MemoryHigh=160M
 MemoryMax=224M
 CPUWeight=40

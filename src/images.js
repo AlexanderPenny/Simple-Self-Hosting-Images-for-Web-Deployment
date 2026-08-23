@@ -60,7 +60,35 @@ const TYPES = [
       && ['avif', 'avis'].includes(b.subarray(8, 12).toString('latin1')),
     size: () => ({}),
   },
+  {
+    // Same ISO-BMFF "ftyp" box family as AVIF above, just a different major
+    // brand. This list covers the common encoders (OBS, phone cameras,
+    // ffmpeg's default isom/mp42) without trying to be an exhaustive registry.
+    mime: 'video/mp4',
+    ext: 'mp4',
+    test: (b) => b.length > 12 && b.subarray(4, 8).toString('latin1') === 'ftyp'
+      && [
+        'isom', 'iso2', 'iso3', 'iso4', 'iso5', 'iso6', 'mp41', 'mp42', 'mp71',
+        'M4V ', 'M4P ', 'M4A ', 'M4B ', 'qt  ', 'avc1', '3gp4', '3gp5', '3g2a',
+        'mmp4', 'dash',
+      ].includes(b.subarray(8, 12).toString('latin1')),
+    // No cheap way to pull dimensions out of an MP4's moov atom from just the
+    // head bytes -- it can be anywhere in the file. Cosmetic-only, like AVIF.
+    size: () => ({}),
+  },
+  {
+    // WebM (and Matroska generally) starts with the EBML header magic number.
+    // Anything with this signature is labelled webm: that is what browsers
+    // can actually play natively, and it is what every real encoder targeting
+    // the web produces.
+    mime: 'video/webm',
+    ext: 'webm',
+    test: (b) => b.length > 4 && b[0] === 0x1a && b[1] === 0x45 && b[2] === 0xdf && b[3] === 0xa3,
+    size: () => ({}),
+  },
 ];
+
+export const VIDEO_EXTS = ['mp4', 'webm'];
 
 export function detectType(buffer) {
   return TYPES.find((t) => t.test(buffer)) || null;

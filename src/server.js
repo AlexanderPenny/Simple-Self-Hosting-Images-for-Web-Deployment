@@ -299,7 +299,7 @@ app.post('/images/upload', requireAuth, (req, res) => {
 
         uploaded.push({
           id,
-          url: `${origin}/images/${id}`,
+          url: `${origin}/images/${id}.${type.ext}`,
           bytes: file.size,
           visibility: batchVisibility,
         });
