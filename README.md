@@ -7,7 +7,7 @@ paste anywhere:
 https://example.com/images/kivuhRjaTZ
 ```
 
-<img width="1900" height="945" alt="Screenshot 2026-07-18 214938" src="https://github.com/user-attachments/assets/f81d6346-a137-490b-a0ba-b7c80d65ed90" />
+<img width="1263" height="964" alt="image" src="https://github.com/user-attachments/assets/6036a364-228c-4cbe-a3fc-820f7761428b" />
 
 The admin panel lives at `/images` behind a login. The images themselves are
 served from `/images/<id>` with no authentication — unless you mark them
