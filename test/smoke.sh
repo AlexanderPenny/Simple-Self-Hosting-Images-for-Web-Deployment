@@ -66,7 +66,7 @@ node "$ROOT/scripts/adduser.js" >/dev/null 2>&1 <<< "" || true
 node -e "
 import('$ROOT/src/db.js').then(async (m) => {
   const { hashPassword } = await import('$ROOT/src/auth.js');
-  m.q.insertUser.run('smoke', hashPassword('smoke-password-123'), Date.now());
+  m.q.insertUser.run('smoke', hashPassword('smoke-password-123'), null, Date.now());
   process.exit(0);
 });
 " || { echo "  FAIL  could not seed user"; exit 1; }

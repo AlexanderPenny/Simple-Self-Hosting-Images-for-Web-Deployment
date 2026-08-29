@@ -30,6 +30,9 @@ format fail2ban parses, with ready-made filters and jails included.
 stays on the system disk — worth doing if you are running from an SD card.
 * **No build step, few dependencies.** Express, multer, better-sqlite3,
 cookie-parser. Server-rendered HTML, no framework, no bundler.
+* **Optional SSO.** Point it at any OpenID Connect provider — authentik,
+Keycloak, Authelia, Google, Okta — on top of password login. Never
+auto-creates accounts.
 
 ---
 
@@ -183,6 +186,11 @@ file readable only by root, e.g. `/etc/contactsheet.env`.
 |`PROXY_HOPS`|`2`|Proxies in front. Caddy alone is 1; Cloudflare Tunnel → Caddy is 2|
 |`TRUST_CLOUDFLARE`|`true`|Use `CF-Connecting-IP`. **Set false if the origin is reachable without Cloudflare**|
 |`LOGIN_MAX_ATTEMPTS`|`10`|In-process throttle threshold|
+|`OIDC_ISSUER_URL`|*(unset)*|Enables SSO. Your provider's issuer URL, e.g. `https://auth.example.com/application/o/contactsheet/`|
+|`OIDC_CLIENT_ID`|*(unset)*|Client ID registered with the provider|
+|`OIDC_CLIENT_SECRET`|*(unset)*|Client secret registered with the provider|
+|`OIDC_SCOPES`|`openid email profile`|Scopes requested at the provider|
+|`OIDC_BUTTON_LABEL`|`Single sign-on`|Text on the login page's SSO button|
 
 ---
 
@@ -192,6 +200,7 @@ file readable only by root, e.g. `/etc/contactsheet.env`.
 node scripts/adduser.js alice     # create
 node scripts/passwd.js alice      # change password
 node scripts/lsusers.js           # list
+node scripts/setemail.js alice alice@example.com   # enable SSO for alice
 ```
 
 Run these as the service user in production:
@@ -203,6 +212,52 @@ sudo -u contactsheet node scripts/adduser.js alice
 
 There is no signup page and no password reset by design — this is meant for a
 handful of people you know.
+
+---
+
+## Single sign-on (OIDC)
+
+Password login always works. On top of it you can enable SSO through any
+OpenID Connect provider — authentik, Keycloak, Authelia, Google Workspace,
+Okta, Azure AD, anything that speaks standard OIDC. This is the same
+relationship as pointing Gitea's "OAuth2 / OpenID Connect" authentication
+source at an IdP: the provider verifies who someone is, this app decides
+what they can do.
+
+**It never creates accounts.** SSO only signs a visitor into a local account
+that already exists — matched by email — so a provider that lets people
+self-register, or a misconfigured "everyone" group, can never hand out
+access on its own. An admin still has to opt each user in.
+
+1. Register this app as a client/application with your provider. You will
+   need its client ID and secret, and it will ask for a redirect URI — that
+   is exactly `<PUBLIC_ORIGIN>/images/oidc/callback`.
+2. Set the environment variables (see Configuration below):
+   ```
+   PUBLIC_ORIGIN=https://example.com
+   OIDC_ISSUER_URL=https://auth.example.com/application/o/contactsheet/
+   OIDC_CLIENT_ID=...
+   OIDC_CLIENT_SECRET=...
+   ```
+   `PUBLIC_ORIGIN` must be set to a fixed address when OIDC is enabled — the
+   app refuses to start otherwise. The redirect URI has to be a trusted,
+   unchanging value; deriving it from the request's `Host` header would let
+   a forged header redirect the login flow elsewhere.
+3. Link a local account to an email address:
+   ```bash
+   node scripts/setemail.js alice alice@example.com
+   ```
+   That email must match what your provider's `email` claim will send for
+   that person. `node scripts/setemail.js alice --` removes the link.
+4. Restart the service. A "Single sign-on" button now appears on the login
+   page.
+
+The first successful SSO sign-in pins the account to that provider's stable
+subject identifier, not just the email — so if someone else's account is
+later given the same address at the IdP, or the email is reassigned, it
+cannot silently take over access. Changing a user's email with
+`scripts/setemail.js` clears that pin, so the account re-links fresh on the
+next SSO sign-in.
 
 ---
 

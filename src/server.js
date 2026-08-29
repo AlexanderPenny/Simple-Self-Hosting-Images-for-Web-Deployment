@@ -32,6 +32,7 @@ import {
   detectType, generateUniqueId, isValidId,
 } from './images.js';
 import { loginPage, dashboardPage } from './views.js';
+import { startOidcLogin, finishOidcLogin } from './oidc.js';
 
 
 /* ------------------------------------------------------------------ *
@@ -126,11 +127,13 @@ for (const stale of fs.readdirSync(tmpDir)) {
  * Admin: login
  * ================================================================== */
 
+const oidcView = config.oidc.enabled ? { enabled: true, buttonLabel: config.oidc.buttonLabel } : null;
+
 app.get('/images', (req, res, next) => {
   const user = currentUser(req);
   if (!user) {
     res.setHeader('Cache-Control', 'no-store');
-    return res.send(loginPage({ csrf: csrfToken(req), siteName: config.siteName }));
+    return res.send(loginPage({ csrf: csrfToken(req), siteName: config.siteName, oidc: oidcView }));
   }
   req.user = user;
   next();
@@ -171,7 +174,7 @@ app.post('/images/login', (req, res) => {
 
   const fail = (message, keep = true) => res.status(401).send(loginPage({
     error: message, csrf: csrfToken(req), username: keep ? username : '',
-    siteName: config.siteName,
+    siteName: config.siteName, oidc: oidcView,
   }));
 
   if (!checkCsrf(req)) {
@@ -182,7 +185,7 @@ app.post('/images/login', (req, res) => {
     authEvents.throttled(ip, username);
     return res.status(429).send(loginPage({
       error: 'Too many attempts. Wait a few minutes before trying again.',
-      csrf: csrfToken(req), siteName: config.siteName,
+      csrf: csrfToken(req), siteName: config.siteName, oidc: oidcView,
     }));
   }
 
@@ -217,6 +220,15 @@ app.post('/images/logout', (req, res) => {
   if (checkCsrf(req)) destroySession(req, res);
   res.redirect('/images');
 });
+
+if (config.oidc.enabled) {
+  app.get('/images/oidc/login', (req, res, next) => {
+    startOidcLogin(req, res).catch(next);
+  });
+  app.get('/images/oidc/callback', (req, res, next) => {
+    finishOidcLogin(req, res).catch(next);
+  });
+}
 
 /* ================================================================== *
  * Admin: upload

@@ -92,7 +92,7 @@ a{color:var(--primary-color)}
 @media (prefers-reduced-motion:reduce){*{transition:none!important}}
 `;
 
-export function loginPage({ error = '', csrf = '', username = '', siteName = 'Image store' } = {}) {
+export function loginPage({ error = '', csrf = '', username = '', siteName = 'Image store', oidc = null } = {}) {
   return `<!doctype html>
 <html lang="en">
 <head>
@@ -133,6 +133,13 @@ input[type=text]:focus,input[type=password]:focus{
   margin:26px 0 0;padding-top:18px;border-top:1px solid var(--bs-gray-300);
   color:var(--dark-color);font-size:13px;line-height:1.55;
 }
+.divider{
+  display:flex;align-items:center;gap:12px;margin:22px 0;
+  color:var(--dark-color);font-size:11px;font-weight:600;
+  letter-spacing:.05rem;text-transform:uppercase;
+}
+.divider::before,.divider::after{content:'';flex:1;height:1px;background:var(--bs-gray-300)}
+.btn--sso{display:block;width:100%;text-align:center;text-decoration:none;padding:13px}
 </style>
 </head>
 <body>
@@ -155,6 +162,10 @@ input[type=text]:focus,input[type=password]:focus{
       </label>
       <button class="btn btn--solid submit" type="submit">Sign in</button>
     </form>
+    ${oidc?.enabled ? `
+    <div class="divider"><span>or</span></div>
+    <a class="btn btn--sso" href="/images/oidc/login">${escapeHtml(oidc.buttonLabel)}</a>
+    ` : ''}
     <p class="note">Repeated failed sign-ins will get your IP address banned at the firewall.</p>
   </div>
 </main>

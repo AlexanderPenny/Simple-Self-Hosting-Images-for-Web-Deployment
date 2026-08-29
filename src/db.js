@@ -25,6 +25,12 @@ db.exec(`
     id            INTEGER PRIMARY KEY AUTOINCREMENT,
     username      TEXT    NOT NULL UNIQUE COLLATE NOCASE,
     password_hash TEXT    NOT NULL,
+    -- Set to enable OIDC sign-in for this user; matched case-insensitively
+    -- against the identity provider's email claim.
+    email         TEXT    COLLATE NOCASE,
+    -- The provider's "sub" claim, recorded on the first successful OIDC
+    -- sign-in and checked on every one after. See src/oidc.js.
+    oidc_subject  TEXT,
     created_at    INTEGER NOT NULL,
     disabled      INTEGER NOT NULL DEFAULT 0
   );
@@ -62,6 +68,23 @@ db.exec(`
   CREATE INDEX IF NOT EXISTS idx_images_sha     ON images(sha256);
 `);
 
+/* Migration: databases created before OIDC support existed need these two
+   columns added. Both default to NULL, which leaves every existing user on
+   password-only login exactly as before -- OIDC only activates for a user
+   once an admin explicitly sets their email. */
+const userColumns = db.prepare('PRAGMA table_info(users)').all().map((c) => c.name);
+if (!userColumns.includes('email')) {
+  db.exec('ALTER TABLE users ADD COLUMN email TEXT COLLATE NOCASE');
+  console.log('[migration] added users.email');
+}
+if (!userColumns.includes('oidc_subject')) {
+  db.exec('ALTER TABLE users ADD COLUMN oidc_subject TEXT');
+  console.log('[migration] added users.oidc_subject');
+}
+// Runs after the migration above, so the email column is guaranteed to exist
+// by this point on both a fresh database and an upgraded one.
+db.exec('CREATE UNIQUE INDEX IF NOT EXISTS idx_users_email ON users(email) WHERE email IS NOT NULL');
+
 /* Migration: databases created before per-image visibility existed need the
    column added. Existing images stay public, which is what they already were,
    so an upgrade never silently changes who can see what. */
@@ -89,11 +112,14 @@ if (!imageColumns.includes('title')) {
 export const q = {
   userByName: db.prepare('SELECT * FROM users WHERE username = ? AND disabled = 0'),
   userById: db.prepare('SELECT * FROM users WHERE id = ?'),
-  listUsers: db.prepare('SELECT id, username, created_at, disabled FROM users ORDER BY id'),
+  userByEmail: db.prepare('SELECT * FROM users WHERE email = ? AND disabled = 0'),
+  listUsers: db.prepare('SELECT id, username, email, oidc_subject, created_at, disabled FROM users ORDER BY id'),
   insertUser: db.prepare(
-    'INSERT INTO users (username, password_hash, created_at) VALUES (?, ?, ?)'
+    'INSERT INTO users (username, password_hash, email, created_at) VALUES (?, ?, ?, ?)'
   ),
   updatePassword: db.prepare('UPDATE users SET password_hash = ? WHERE username = ?'),
+  setEmail: db.prepare('UPDATE users SET email = ?, oidc_subject = NULL WHERE username = ?'),
+  setOidcSubject: db.prepare('UPDATE users SET oidc_subject = ? WHERE id = ?'),
 
   insertSession: db.prepare(
     'INSERT INTO sessions (id, user_id, created_at, expires_at, ip, user_agent) VALUES (?, ?, ?, ?, ?, ?)'

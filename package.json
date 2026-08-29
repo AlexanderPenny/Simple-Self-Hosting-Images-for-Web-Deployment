@@ -10,6 +10,7 @@
     "adduser": "node scripts/adduser.js",
     "passwd": "node scripts/passwd.js",
     "lsusers": "node scripts/lsusers.js",
+    "set-email": "node scripts/setemail.js",
     "test": "bash test/smoke.sh"
   },
   "engines": {
@@ -19,7 +20,8 @@
     "better-sqlite3": "^11.5.0",
     "cookie-parser": "^1.4.7",
     "express": "^4.21.1",
-    "multer": "^2.2.0"
+    "multer": "^2.2.0",
+    "openid-client": "^6.8.7"
   },
   "keywords": [
     "image-host",
@@ -27,7 +29,9 @@
     "image-upload",
     "fail2ban",
     "caddy",
-    "raspberry-pi"
+    "raspberry-pi",
+    "oidc",
+    "sso"
   ],
   "license": "MIT"
 }

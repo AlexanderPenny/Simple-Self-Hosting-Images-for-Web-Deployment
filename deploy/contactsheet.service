@@ -42,6 +42,16 @@ Environment=PROXY_HOPS=2
 Environment=TRUST_CLOUDFLARE=true
 Environment=MAX_UPLOAD_BYTES=12582912
 Environment=MAX_FILES_PER_UPLOAD=10
+
+# Optional SSO against any OpenID Connect provider. Leave unset to use
+# password-only login. See README.md "Single sign-on (OIDC)" before
+# enabling -- PUBLIC_ORIGIN above must be set to a fixed address, and each
+# user still needs `node scripts/setemail.js` run for them once.
+#Environment=OIDC_ISSUER_URL=https://auth.example.com/application/o/contactsheet/
+#Environment=OIDC_CLIENT_ID=
+# OIDC_CLIENT_SECRET is not set here -- add it to /etc/contactsheet.env
+# below instead, which is not world-readable the way this unit file is.
+
 # Generate with: openssl rand -base64 48
 EnvironmentFile=/etc/contactsheet.env
 

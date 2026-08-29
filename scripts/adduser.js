@@ -17,16 +17,26 @@ import { q } from '../src/db.js';
 import { hashPassword } from '../src/auth.js';
 
 const username = process.argv[2];
+const email = process.argv[3] || null;
 if (!username) {
-  console.error('Usage: npm run adduser -- <username>');
+  console.error('Usage: npm run adduser -- <username> [email]');
+  console.error('The email is optional and only needed for OIDC/SSO sign-in.');
   process.exit(1);
 }
 if (!/^[A-Za-z0-9._-]{2,64}$/.test(username)) {
   console.error('Usernames may use letters, numbers, dot, underscore and hyphen (2-64 chars).');
   process.exit(1);
 }
+if (email && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
+  console.error(`"${email}" does not look like an email address.`);
+  process.exit(1);
+}
 if (q.userByName.get(username)) {
   console.error(`User "${username}" already exists.`);
+  process.exit(1);
+}
+if (email && q.userByEmail.get(email)) {
+  console.error(`Another user already has the email "${email}".`);
   process.exit(1);
 }
 
@@ -41,8 +51,8 @@ if (password !== again) {
   process.exit(1);
 }
 
-q.insertUser.run(username, hashPassword(password), Date.now());
-console.log(`Created user "${username}".`);
+q.insertUser.run(username, hashPassword(password), email, Date.now());
+console.log(`Created user "${username}".${email ? ` (SSO email: ${email})` : ''}`);
 process.exit(0);
 
 function prompt(question) {

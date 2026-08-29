@@ -225,6 +225,10 @@ cat <<NEXT
 
   Auth log for fail2ban:  $DATA_DIR/log/auth.log
   Health check:           curl -s localhost:$PORT/healthz
+
+  Optional: single sign-on via authentik/Keycloak/etc. See README.md
+  "Single sign-on (OIDC)" -- it needs PUBLIC_ORIGIN set, so do that first
+  if you plan to use it.
 NEXT
 
 if [ -n "$STORE_DIR" ] && [ "$REQUIRE_MARKER" = true ]; then

@@ -75,6 +75,24 @@ export const config = {
   siteName: env.SITE_NAME || 'Image store',
 
   isProduction: env.NODE_ENV === 'production',
+
+  // Optional single sign-on via any OpenID Connect provider (authentik,
+  // Keycloak, Authelia, Google Workspace, Okta...). Off unless all three of
+  // issuer/client id/client secret are set. This never creates accounts by
+  // itself -- see src/oidc.js for why.
+  oidc: {
+    enabled: Boolean(env.OIDC_ISSUER_URL && env.OIDC_CLIENT_ID && env.OIDC_CLIENT_SECRET),
+    // No trailing-slash normalization here: OIDC discovery requires the
+    // issuer returned by the provider to match this value byte-for-byte,
+    // and some providers (e.g. authentik) always emit a trailing "/" --
+    // stripping it would make every discovery call fail that exact-match
+    // check.
+    issuerUrl: env.OIDC_ISSUER_URL || '',
+    clientId: env.OIDC_CLIENT_ID || '',
+    clientSecret: env.OIDC_CLIENT_SECRET || '',
+    scopes: env.OIDC_SCOPES || 'openid email profile',
+    buttonLabel: env.OIDC_BUTTON_LABEL || 'Single sign-on',
+  },
 };
 
 // Image files can live on a different disk from the database. On a Pi the
@@ -123,4 +141,20 @@ if (env.REQUIRE_STORE_MARKER === 'true') {
 
 if (config.isProduction && config.sessionSecret === 'dev-only-insecure-secret') {
   throw new Error('Refusing to start in production with the default SESSION_SECRET.');
+}
+
+/* ------------------------------------------------------------------ *
+ * The OAuth redirect_uri must be a fixed address the app itself controls,
+ * never one built from the request's Host header. If it were request-
+ * derived, a forged Host header could redirect the authorization code
+ * somewhere else and hijack the login. PUBLIC_ORIGIN is the only source
+ * for it, so OIDC refuses to start without one.
+ * ------------------------------------------------------------------ */
+if (config.oidc.enabled && !config.publicOrigin) {
+  throw new Error(
+    'OIDC is configured (OIDC_ISSUER_URL/OIDC_CLIENT_ID/OIDC_CLIENT_SECRET) but '
+    + 'PUBLIC_ORIGIN is not set. Set PUBLIC_ORIGIN, e.g. https://example.com -- it '
+    + 'must exactly match the redirect URI registered with your identity provider: '
+    + '<PUBLIC_ORIGIN>/images/oidc/callback'
+  );
 }
