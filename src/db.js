@@ -28,8 +28,8 @@ db.exec(`
     -- Set to enable OIDC sign-in for this user; matched case-insensitively
     -- against the identity provider's email claim.
     email         TEXT    COLLATE NOCASE,
-    -- The provider's "sub" claim, recorded on the first successful OIDC
-    -- sign-in and checked on every one after. See src/oidc.js.
+    -- Legacy single-provider link, kept so old databases still open. Since
+    -- 1.2 links live in oidc_links; this column is copied there once.
     oidc_subject  TEXT,
     created_at    INTEGER NOT NULL,
     disabled      INTEGER NOT NULL DEFAULT 0
@@ -85,6 +85,34 @@ if (!userColumns.includes('oidc_subject')) {
 // by this point on both a fresh database and an upgraded one.
 db.exec('CREATE UNIQUE INDEX IF NOT EXISTS idx_users_email ON users(email) WHERE email IS NOT NULL');
 
+/* Single sign-on links: which provider account belongs to which local user.
+   One row per (provider, provider's subject). The first SSO sign-in pins the
+   account to the provider's stable subject ID; later sign-ins must present
+   the same one. A user can have one link per provider.
+
+   Migration: versions before 1.2 supported one provider and kept its subject
+   in users.oidc_subject. Those links are copied here as provider "default",
+   the id given to the provider set up with the OIDC_* variables, so an
+   upgrade keeps every existing link. */
+const hadLinks = db.prepare("SELECT 1 FROM sqlite_master WHERE type='table' AND name='oidc_links'").get();
+db.exec(`
+  CREATE TABLE IF NOT EXISTS oidc_links (
+    provider   TEXT    NOT NULL,
+    subject    TEXT    NOT NULL,
+    user_id    INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    created_at INTEGER NOT NULL,
+    PRIMARY KEY (provider, subject),
+    UNIQUE (user_id, provider)
+  );
+`);
+if (!hadLinks) {
+  const moved = db.prepare(`
+    INSERT OR IGNORE INTO oidc_links (provider, subject, user_id, created_at)
+    SELECT 'default', oidc_subject, id, ? FROM users WHERE oidc_subject IS NOT NULL
+  `).run(Date.now()).changes;
+  if (moved) console.log(`[migration] moved ${moved} single sign-on link(s) to oidc_links as provider "default"`);
+}
+
 /* Migration: databases created before per-image visibility existed need the
    column added. Existing images stay public, which is what they already were,
    so an upgrade never silently changes who can see what. */
@@ -109,23 +137,34 @@ if (!imageColumns.includes('title')) {
   console.log('[migration] added images.title, seeded from original filenames');
 }
 
+// Image queries take @owner: null means "every image" (LIBRARY_MODE=shared),
+// a user id limits them to that user's uploads (LIBRARY_MODE=per-user).
 export const q = {
   userByName: db.prepare('SELECT * FROM users WHERE username = ? AND disabled = 0'),
   userById: db.prepare('SELECT * FROM users WHERE id = ?'),
   userByEmail: db.prepare('SELECT * FROM users WHERE email = ? AND disabled = 0'),
-  listUsers: db.prepare('SELECT id, username, email, oidc_subject, created_at, disabled FROM users ORDER BY id'),
+  // Includes disabled accounts: single sign-on must refuse those outright,
+  // not treat them as "no account" and create a fresh one.
+  userByEmailAny: db.prepare('SELECT * FROM users WHERE email = ?'),
+  listUsers: db.prepare('SELECT id, username, email, created_at, disabled FROM users ORDER BY id'),
   insertUser: db.prepare(
     'INSERT INTO users (username, password_hash, email, created_at) VALUES (?, ?, ?, ?)'
   ),
   updatePassword: db.prepare('UPDATE users SET password_hash = ? WHERE username = ?'),
   setEmail: db.prepare('UPDATE users SET email = ?, oidc_subject = NULL WHERE username = ?'),
-  setOidcSubject: db.prepare('UPDATE users SET oidc_subject = ? WHERE id = ?'),
+
+  linkBySubject: db.prepare('SELECT * FROM oidc_links WHERE provider = ? AND subject = ?'),
+  linkForUser: db.prepare('SELECT * FROM oidc_links WHERE user_id = ? AND provider = ?'),
+  linksForUser: db.prepare('SELECT provider FROM oidc_links WHERE user_id = ? ORDER BY provider'),
+  insertLink: db.prepare('INSERT INTO oidc_links (provider, subject, user_id, created_at) VALUES (?, ?, ?, ?)'),
+  deleteLinksForUser: db.prepare('DELETE FROM oidc_links WHERE user_id = ?'),
 
   insertSession: db.prepare(
     'INSERT INTO sessions (id, user_id, created_at, expires_at, ip, user_agent) VALUES (?, ?, ?, ?, ?, ?)'
   ),
   sessionById: db.prepare('SELECT * FROM sessions WHERE id = ?'),
   deleteSession: db.prepare('DELETE FROM sessions WHERE id = ?'),
+  deleteSessionsForUser: db.prepare('DELETE FROM sessions WHERE user_id = ?'),
   deleteExpiredSessions: db.prepare('DELETE FROM sessions WHERE expires_at < ?'),
 
   insertImage: db.prepare(`
@@ -134,22 +173,13 @@ export const q = {
   `),
   setVisibility: db.prepare('UPDATE images SET visibility = ? WHERE id = ?'),
   setTitle: db.prepare('UPDATE images SET title = ? WHERE id = ?'),
-  setTitle: db.prepare('UPDATE images SET title = ? WHERE id = ?'),
   imageById: db.prepare('SELECT * FROM images WHERE id = ?'),
   deleteImage: db.prepare('DELETE FROM images WHERE id = ?'),
   bumpViews: db.prepare('UPDATE images SET views = views + 1 WHERE id = ?'),
   listImages: db.prepare(`
     SELECT i.*, u.username AS uploader
     FROM images i LEFT JOIN users u ON u.id = i.uploaded_by
-    ORDER BY i.created_at DESC
-    LIMIT ? OFFSET ?
-  `),
-  searchImages: db.prepare(`
-    SELECT i.*, u.username AS uploader
-    FROM images i LEFT JOIN users u ON u.id = i.uploaded_by
-    WHERE i.title LIKE '%' || @term || '%' COLLATE NOCASE
-       OR i.original_name LIKE '%' || @term || '%' COLLATE NOCASE
-       OR i.id = @term
+    WHERE (@owner IS NULL OR i.uploaded_by = @owner)
     ORDER BY i.created_at DESC
     LIMIT @limit OFFSET @offset
   `),
@@ -158,9 +188,10 @@ export const q = {
   searchImages: db.prepare(`
     SELECT i.*, u.username AS uploader
     FROM images i LEFT JOIN users u ON u.id = i.uploaded_by
-    WHERE i.title LIKE @like ESCAPE '\\'
-       OR i.original_name LIKE @like ESCAPE '\\'
-       OR i.id LIKE @like ESCAPE '\\'
+    WHERE (@owner IS NULL OR i.uploaded_by = @owner)
+      AND (i.title LIKE @like ESCAPE '\\'
+        OR i.original_name LIKE @like ESCAPE '\\'
+        OR i.id LIKE @like ESCAPE '\\')
     ORDER BY i.created_at DESC
     LIMIT @limit OFFSET @offset
   `),
@@ -169,6 +200,7 @@ export const q = {
            COALESCE(SUM(bytes),0) AS b,
            COALESCE(SUM(visibility = 'private'),0) AS private_n
     FROM images
+    WHERE (@owner IS NULL OR uploaded_by = @owner)
   `),
 };
 

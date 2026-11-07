@@ -32,7 +32,8 @@ import {
   detectType, generateUniqueId, isValidId,
 } from './images.js';
 import { loginPage, dashboardPage } from './views.js';
-import { startOidcLogin, finishOidcLogin } from './oidc.js';
+import { providers, redirectUri } from './providers.js';
+import { startLogin, finishLogin } from './oidc.js';
 
 
 /* ------------------------------------------------------------------ *
@@ -107,6 +108,44 @@ app.use((req, res, next) => {
   next();
 });
 
+/* ------------------------------------------------------------------ *
+ * HTML pages get a strict Content-Security-Policy. Scripts and styles run
+ * only with this response's random nonce, so if an escaping bug ever let
+ * markup through, an injected <script> still would not run. frame-
+ * ancestors (and X-Frame-Options for old browsers) stop another site
+ * putting the dashboard in an invisible frame and tricking a signed-in
+ * user into clicking Publish or Delete (clickjacking). Before 1.2 the app
+ * sent neither.
+ * ------------------------------------------------------------------ */
+function sendPage(res, status, html) {
+  const nonce = res.locals.nonce;
+  res.setHeader('Content-Security-Policy', [
+    "default-src 'none'",
+    `script-src 'nonce-${nonce}'`,
+    `style-src 'nonce-${nonce}' https://fonts.googleapis.com`,
+    'font-src https://fonts.gstatic.com',
+    // https: so provider icons can come from anywhere you choose to host them.
+    "img-src 'self' https: data:",
+    "media-src 'self'",
+    "connect-src 'self'",
+    "form-action 'self'",
+    "frame-ancestors 'none'",
+    "base-uri 'none'",
+  ].join('; '));
+  res.setHeader('X-Frame-Options', 'DENY');
+  res.setHeader('Cache-Control', 'no-store');
+  res.status(status).send(html);
+}
+
+app.use((req, res, next) => {
+  res.locals.nonce = crypto.randomBytes(16).toString('base64');
+  next();
+});
+
+// In per-user mode every image query is limited to the signed-in account.
+const ownerOf = (user) => (config.libraryMode === 'per-user' ? user.id : null);
+const canManage = (user, image) => config.libraryMode === 'shared' || image.uploaded_by === user.id;
+
 // Files stream to disk rather than into memory. On a 1 GB Raspberry Pi,
 // buffering ten 12 MB uploads at once would be a real risk of an OOM kill.
 // Staging lives inside the store so that rename() stays on one filesystem.
@@ -127,36 +166,50 @@ for (const stale of fs.readdirSync(tmpDir)) {
  * Admin: login
  * ================================================================== */
 
-const oidcView = config.oidc.enabled ? { enabled: true, buttonLabel: config.oidc.buttonLabel } : null;
+// What the sign-in page needs to draw one button per provider. Nothing
+// secret: no client secrets or endpoints leave providers.js.
+const providerButtons = providers.map((p) => ({
+  id: p.id, label: p.label, icon: p.icon, color: p.color, textColor: p.textColor, href: p.loginPath,
+}));
+
+function renderLogin(req, res, status, { error = '', username = '' } = {}) {
+  sendPage(res, status, loginPage({
+    error, username,
+    csrf: csrfToken(req, res),
+    siteName: config.siteName,
+    providers: providerButtons,
+    passwordLogin: config.passwordLogin,
+    nonce: res.locals.nonce,
+  }));
+}
 
 app.get('/images', (req, res, next) => {
   const user = currentUser(req);
-  if (!user) {
-    res.setHeader('Cache-Control', 'no-store');
-    return res.send(loginPage({ csrf: csrfToken(req), siteName: config.siteName, oidc: oidcView }));
-  }
+  if (!user) return renderLogin(req, res, 200);
   req.user = user;
   next();
 }, (req, res) => {
   const page = Math.max(0, parseInt(req.query.page, 10) || 0);
   const search = String(req.query.q || '').trim().slice(0, 100);
 
+  const owner = ownerOf(req.user);
   const rows = search
     ? q.searchImages.all({
+        owner,
         like: likePattern(search),
         limit: PER_PAGE + 1,
         offset: page * PER_PAGE,
       })
-    : q.listImages.all(PER_PAGE + 1, page * PER_PAGE);
+    : q.listImages.all({ owner, limit: PER_PAGE + 1, offset: page * PER_PAGE });
 
   const hasNext = rows.length > PER_PAGE;
 
-  res.setHeader('Cache-Control', 'no-store');
-  res.send(dashboardPage({
+  sendPage(res, 200, dashboardPage({
     user: req.user,
     images: rows.slice(0, PER_PAGE),
-    stats: q.countImages.get(),
-    csrf: csrfToken(req),
+    stats: q.countImages.get({ owner }),
+    csrf: csrfToken(req, res),
+    nonce: res.locals.nonce,
     origin: config.publicOrigin || `${req.protocol}://${req.get('host')}`,
     page,
     hasNext,
@@ -165,17 +218,15 @@ app.get('/images', (req, res, next) => {
   }));
 });
 
-app.post('/images/login', (req, res) => {
+app.post('/images/login', (req, res, next) => {
+  if (!config.passwordLogin) return next(); // falls through to the 404
   const ip = clientIp(req);
   const username = String(req.body.username || '').trim().slice(0, 64);
   const password = String(req.body.password || '');
 
-  res.setHeader('Cache-Control', 'no-store');
-
-  const fail = (message, keep = true) => res.status(401).send(loginPage({
-    error: message, csrf: csrfToken(req), username: keep ? username : '',
-    siteName: config.siteName, oidc: oidcView,
-  }));
+  const fail = (message, keep = true) => renderLogin(req, res, 401, {
+    error: message, username: keep ? username : '',
+  });
 
   if (!checkCsrf(req)) {
     return fail('That form expired. Please try again.');
@@ -183,10 +234,7 @@ app.post('/images/login', (req, res) => {
 
   if (tooManyAttempts(ip)) {
     authEvents.throttled(ip, username);
-    return res.status(429).send(loginPage({
-      error: 'Too many attempts. Wait a few minutes before trying again.',
-      csrf: csrfToken(req), siteName: config.siteName, oidc: oidcView,
-    }));
+    return renderLogin(req, res, 429, { error: 'Too many attempts. Wait a few minutes before trying again.' });
   }
 
   if (!username || !password) {
@@ -221,12 +269,20 @@ app.post('/images/logout', (req, res) => {
   res.redirect('/images');
 });
 
-if (config.oidc.enabled) {
-  app.get('/images/oidc/login', (req, res, next) => {
-    startOidcLogin(req, res).catch(next);
+for (const p of providers) {
+  app.get(p.loginPath, (req, res, next) => {
+    startLogin(p, req, res).catch((err) => {
+      // Usually the provider's discovery document could not be fetched.
+      console.error(`[sso:${p.id}] could not start sign-in:`, err?.message || err);
+      renderLogin(req, res, 502, { error: `${p.label} is not reachable right now. Please try again later.` });
+    });
   });
-  app.get('/images/oidc/callback', (req, res, next) => {
-    finishOidcLogin(req, res).catch(next);
+  app.get(p.callbackPath, (req, res, next) => {
+    finishLogin(p, req, res).then((result) => {
+      if (!result.user) return renderLogin(req, res, result.status, { error: result.message });
+      createSession(res, result.user, req);
+      res.redirect('/images');
+    }).catch(next);
   });
 }
 
@@ -341,8 +397,10 @@ app.patch('/images/:id', requireAuth, express.json({ limit: '1kb' }), (req, res)
   const { id } = req.params;
   if (!isValidId(id)) return res.status(400).json({ error: 'Not a valid image ID.' });
 
+  // In per-user mode "not yours" and "not found" look identical, so an
+  // account cannot use this to probe which IDs belong to someone else.
   const image = q.imageById.get(id);
-  if (!image) return res.status(404).json({ error: 'No image with that ID.' });
+  if (!image || !canManage(req.user, image)) return res.status(404).json({ error: 'No image with that ID.' });
 
   const changes = {};
 
@@ -379,7 +437,7 @@ app.delete('/images/:id', requireAuth, async (req, res) => {
   if (!isValidId(id)) return res.status(400).json({ error: 'Not a valid image ID.' });
 
   const image = q.imageById.get(id);
-  if (!image) return res.status(404).json({ error: 'No image with that ID.' });
+  if (!image || !canManage(req.user, image)) return res.status(404).json({ error: 'No image with that ID.' });
 
   q.deleteImage.run(id);
   try {
@@ -407,11 +465,15 @@ app.get('/images/:id', (req, res) => {
   const image = q.imageById.get(id);
   if (!image) return notFound();
 
-  // Private images require a signed-in session. The response for "private and
-  // not signed in" is byte-identical to "no such image", so an outsider cannot
-  // use this endpoint to discover which IDs exist.
+  // Private images need a signed-in session -- in per-user mode, the
+  // uploader's own. The response for "private and not allowed" is byte-
+  // identical to "no such image", so nobody can use this endpoint to
+  // discover which IDs exist.
   const isPrivate = image.visibility === 'private';
-  if (isPrivate && !currentUser(req)) return notFound();
+  if (isPrivate) {
+    const viewer = currentUser(req);
+    if (!viewer || !canManage(viewer, image)) return notFound();
+  }
 
   const filePath = path.join(config.storeDir, image.filename);
   // Defence in depth: the ID pattern already excludes traversal characters,
@@ -473,4 +535,13 @@ app.listen(config.port, config.bindHost, () => {
   console.log(`contactsheet listening on ${config.bindHost}:${config.port}`);
   console.log(`  store:    ${config.storeDir}`);
   console.log(`  auth log: ${config.authLogPath}`);
+  console.log(`  library:  ${config.libraryMode}; password sign-in ${config.passwordLogin ? 'on' : 'off'}`);
+  console.log(`  client IP from: ${config.trustCloudflare ? 'CF-Connecting-IP, else ' : ''}`
+    + (config.trustProxy ? `X-Forwarded-For (${config.proxyHops} proxy hop(s))` : 'the socket'));
+  for (const p of providers) {
+    console.log(`  sso:      ${p.id} (${p.type}) -> redirect URI ${redirectUri(p)}`);
+  }
+  if (!config.passwordLogin && !providers.length) {
+    console.warn('  WARNING: PASSWORD_LOGIN=false and no single sign-on providers -- nobody can sign in.');
+  }
 });

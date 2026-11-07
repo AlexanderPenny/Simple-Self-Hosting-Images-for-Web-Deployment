@@ -1,0 +1,31 @@
+{
+  "_readme": "Copy to /etc/contactsheet/oidc-providers.json, keep only the providers you want, chmod 640, set OIDC_PROVIDERS_FILE to it. Keys starting with _ are comments. Full reference: the project wiki, 'Provider configuration'. Redirect URI to register with each provider: <PUBLIC_ORIGIN>/images/oidc/<id>/callback",
+  "providers": [
+    {
+      "_about": "authentik, Keycloak, Authelia, Pocket ID, Zitadel... any OpenID Connect provider works the same way.",
+      "id": "authentik",
+      "type": "oidc",
+      "label": "Sign in with authentik",
+      "color": "#fd4b2d",
+      "issuer": "https://auth.example.com/application/o/contactsheet/",
+      "clientId": "PASTE-CLIENT-ID",
+      "clientSecretEnv": "AUTHENTIK_CLIENT_SECRET"
+    },
+    {
+      "_about": "Google. Anyone with a Google account can reach this button, so either keep autoCreate off (link accounts with scripts/setemail.js) or restrict it as below.",
+      "id": "google",
+      "preset": "google",
+      "clientId": "PASTE-CLIENT-ID.apps.googleusercontent.com",
+      "clientSecretFile": "/etc/contactsheet/google-client-secret",
+      "autoCreate": true,
+      "allowedEmailDomains": ["example.com"]
+    },
+    {
+      "_about": "GitHub is plain OAuth2, not OIDC; the preset fills in its endpoints and reads the verified address from /user/emails.",
+      "id": "github",
+      "preset": "github",
+      "clientId": "PASTE-CLIENT-ID",
+      "clientSecretEnv": "GITHUB_CLIENT_SECRET"
+    }
+  ]
+}

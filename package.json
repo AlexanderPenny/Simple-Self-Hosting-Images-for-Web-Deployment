@@ -1,6 +1,6 @@
 {
   "name": "contactsheet",
-  "version": "1.1.0",
+  "version": "1.2.0",
   "private": true,
   "type": "module",
   "description": "Self-hosted image host with short public addresses, per-image privacy, and fail2ban protection",
@@ -11,7 +11,8 @@
     "passwd": "node scripts/passwd.js",
     "lsusers": "node scripts/lsusers.js",
     "set-email": "node scripts/setemail.js",
-    "test": "bash test/smoke.sh"
+    "test": "bash test/smoke.sh",
+    "test:sso": "bash test/sso.sh"
   },
   "engines": {
     "node": ">=20"
@@ -19,8 +20,8 @@
   "dependencies": {
     "better-sqlite3": "^11.5.0",
     "cookie-parser": "^1.4.7",
-    "express": "^4.21.1",
-    "multer": "^2.2.0",
+    "express": "^4.22.3",
+    "multer": "^2.5.0",
     "openid-client": "^6.8.7"
   },
   "keywords": [
@@ -31,7 +32,8 @@
     "caddy",
     "raspberry-pi",
     "oidc",
-    "sso"
+    "sso",
+    "oauth2"
   ],
-  "license": "MIT"
+  "license": "Apache-2.0"
 }

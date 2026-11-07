@@ -26,9 +26,10 @@ const FONTS = `
 <link href="https://fonts.googleapis.com/css2?family=Hind:wght@400;500;600&family=Montserrat:wght@600;700&display=swap" rel="stylesheet">
 `;
 
-/* Design tokens for a light, minimal aesthetic: light ground, square
-   corners, hairline grey borders, one cyan accent, Montserrat for headings
-   and Hind for body text. */
+/* Design tokens: a light ground with a soft blue tint, frosted-glass
+   panels with rounded corners, one cyan accent and a navy secondary,
+   Montserrat for headings and Hind for body text. Change the colours in
+   :root to re-brand it. */
 const TOKENS = `
 :root{
   --primary-color:     #0AA1D6;
@@ -72,8 +73,7 @@ button,input{font-family:inherit;font-size:inherit}
 a{color:var(--primary-color)}
 :focus-visible{outline:2px solid var(--primary-color);outline-offset:2px}
 
-/* Square corners, hairline border, cyan on hover: the row treatment reused
-   for every interactive surface here. */
+/* Buttons: a quiet frosted default, cyan on hover. */
 .btn{
   cursor:pointer;
   font-family:var(--heading-font);
@@ -90,9 +90,68 @@ a{color:var(--primary-color)}
 .btn--solid:hover{background:var(--primary-color);border-color:var(--primary-color)}
 
 @media (prefers-reduced-motion:reduce){*{transition:none!important}}
+
+/* ---------- glass look (iOS style) ---------- */
+:root{
+  --glass-bg:     rgba(255,255,255,.55);
+  --glass-border: rgba(255,255,255,.8);
+  --glass-shadow: 0 1px 2px rgba(26,42,54,.04), 0 8px 24px rgba(26,42,54,.06);
+  --glass-blur:   saturate(180%) blur(20px);
+  --field-bg:     rgba(255,255,255,.7);
+  --field-border: rgba(26,42,54,.12);
+}
+html{scrollbar-gutter:stable}
+body{background:#f3f6f9}
+/* Soft colour behind the glass. A fixed layer rather than background-attachment, which iOS ignores. */
+body::before{
+  content:"";position:fixed;inset:0;z-index:-1;
+  background:
+    radial-gradient(38rem 30rem at 8% -6%,   rgba(10,161,214,.28), transparent 70%),
+    radial-gradient(34rem 28rem at 96% 18%,  rgba(11,48,110,.18),  transparent 70%),
+    radial-gradient(40rem 30rem at 28% 108%, rgba(10,161,214,.16), transparent 70%),
+    #f3f6f9;
+}
+/* "body" raises the specificity so .glass beats each page's own surface rules. */
+body .glass{
+  background:var(--glass-bg);
+  -webkit-backdrop-filter:var(--glass-blur);backdrop-filter:var(--glass-blur);
+  border:1px solid var(--glass-border);box-shadow:var(--glass-shadow);
+}
+.btn{border-radius:10px;background:var(--field-bg);border-color:var(--field-border)}
+.btn:hover,.btn:focus-visible{background:var(--primary-color);border-color:var(--primary-color);color:#fff}
+/* Main action: cyan, navy on hover. */
+.btn--solid{background:var(--primary-color);border-color:var(--primary-color);color:#fff}
+.btn--solid:hover,.btn--solid:focus-visible{background:var(--secondary-color);border-color:var(--secondary-color)}
+/* No blur available, or the visitor asked for less transparency: solid panels. */
+@supports not ((backdrop-filter:blur(1px)) or (-webkit-backdrop-filter:blur(1px))){
+  :root{--glass-bg:rgba(255,255,255,.94)}
+}
+@media (prefers-reduced-transparency:reduce){
+  :root{--glass-bg:#fff}
+}
 `;
 
-export function loginPage({ error = '', csrf = '', username = '', siteName = 'Image store', oidc = null } = {}) {
+/* One sign-in button per provider. Colours are validated as hex in
+   providers.js and ids as [a-z0-9_-], so both are safe inside the CSS. */
+function providerCss(providers) {
+  return providers.filter((p) => p.color).map((p) => {
+    const text = p.textColor || '#fff';
+    return `.sso--${p.id},.sso--${p.id}:hover,.sso--${p.id}:focus-visible{background:${p.color};border-color:rgba(26,42,54,.15);color:${text}}`;
+  }).join('\n');
+}
+
+function providerButtons(providers) {
+  return providers.map((p) => `
+      <a class="btn sso sso--${escapeHtml(p.id)}" href="${escapeHtml(p.href)}">
+        ${p.icon ? `<img src="${escapeHtml(p.icon)}" alt="" width="18" height="18">` : ''}
+        <span>${escapeHtml(p.label)}</span>
+      </a>`).join('');
+}
+
+export function loginPage({
+  error = '', csrf = '', username = '', siteName = 'Image store',
+  providers = [], passwordLogin = true, nonce = '',
+} = {}) {
   return `<!doctype html>
 <html lang="en">
 <head>
@@ -101,7 +160,7 @@ export function loginPage({ error = '', csrf = '', username = '', siteName = 'Im
 <meta name="robots" content="noindex,nofollow">
 <title>Sign in &middot; ${escapeHtml(siteName)}</title>
 ${FONTS}
-<style>
+<style nonce="${escapeHtml(nonce)}">
 ${TOKENS}
 .stage{min-height:100vh;display:grid;place-items:center;padding:56px 20px}
 .card{
@@ -129,26 +188,39 @@ input[type=text]:focus,input[type=password]:focus{
   background:var(--primary-color-200);color:var(--black-color);
   padding:11px 14px;margin-bottom:24px;font-size:14px;line-height:1.5;
 }
-.note{
-  margin:26px 0 0;padding-top:18px;border-top:1px solid var(--bs-gray-300);
-  color:var(--dark-color);font-size:13px;line-height:1.55;
-}
 .divider{
   display:flex;align-items:center;gap:12px;margin:22px 0;
   color:var(--dark-color);font-size:11px;font-weight:600;
   letter-spacing:.05rem;text-transform:uppercase;
 }
 .divider::before,.divider::after{content:'';flex:1;height:1px;background:var(--bs-gray-300)}
-.btn--sso{display:block;width:100%;text-align:center;text-decoration:none;padding:13px}
+.sso-list{display:grid;gap:10px}
+.sso{
+  display:flex;align-items:center;justify-content:center;gap:9px;
+  width:100%;text-decoration:none;padding:13px;
+  background:var(--secondary-color);border-color:var(--secondary-color);color:#fff;
+  box-shadow:0 6px 16px rgba(11,48,110,.16);
+}
+.sso:hover,.sso:focus-visible{background:var(--primary-color);border-color:var(--primary-color);color:#fff}
+.sso img{display:block;flex:none;width:18px;height:18px;object-fit:contain}
+${providerCss(providers)}
+.sso[class*="sso--"]:hover,.sso[class*="sso--"]:focus-visible{filter:brightness(.93)}
+.none{color:var(--dark-color);font-size:14px;margin:0}
+/* glass */
+.card{border-radius:20px}
+input[type=text],input[type=password]{border-radius:10px;background:var(--field-bg);border-color:var(--field-border)}
+.alert{border-radius:12px;background:rgba(10,161,214,.10)}
+.divider::before,.divider::after{background:rgba(26,42,54,.10)}
 </style>
 </head>
 <body>
 <main class="stage">
-  <div class="card">
+  <div class="card glass">
     <span class="eyebrow">${escapeHtml(siteName)}</span>
     <h1>Image store</h1>
     <p class="tagline">Sign in to upload and manage hosted images.</p>
     ${error ? `<div class="alert" role="alert">${escapeHtml(error)}</div>` : ''}
+    ${passwordLogin ? `
     <form method="post" action="/images/login" autocomplete="on">
       <input type="hidden" name="_csrf" value="${escapeHtml(csrf)}">
       <label>
@@ -161,12 +233,11 @@ input[type=text]:focus,input[type=password]:focus{
         <input type="password" name="password" autocomplete="current-password" required>
       </label>
       <button class="btn btn--solid submit" type="submit">Sign in</button>
-    </form>
-    ${oidc?.enabled ? `
-    <div class="divider"><span>or</span></div>
-    <a class="btn btn--sso" href="/images/oidc/login">${escapeHtml(oidc.buttonLabel)}</a>
-    ` : ''}
-    <p class="note">Repeated failed sign-ins will get your IP address banned at the firewall.</p>
+    </form>` : ''}
+    ${passwordLogin && providers.length ? '<div class="divider"><span>or</span></div>' : ''}
+    ${providers.length ? `<div class="sso-list">${providerButtons(providers)}
+    </div>` : ''}
+    ${!passwordLogin && !providers.length ? '<p class="none">Sign-in is not set up yet.</p>' : ''}
   </div>
 </main>
 </body>
@@ -174,7 +245,7 @@ input[type=text]:focus,input[type=password]:focus{
 }
 
 export function dashboardPage({
-  user, images, stats, csrf, origin, page, hasNext, search = '', siteName = 'Image store',
+  user, images, stats, csrf, origin, page, hasNext, search = '', siteName = 'Image store', nonce = '',
 }) {
   const frames = images.map((img) => {
     const priv = img.visibility === 'private';
@@ -188,7 +259,7 @@ export function dashboardPage({
       ? `<video src="/images/${escapeHtml(img.id)}" muted playsinline preload="metadata"></video>`
       : `<img src="/images/${escapeHtml(img.id)}" alt="${escapeHtml(img.title || img.original_name || img.id)}" loading="lazy">`;
     return `
-    <figure class="frame ${priv ? 'is-private' : ''}" data-id="${escapeHtml(img.id)}">
+    <figure class="frame glass ${priv ? 'is-private' : ''}" data-id="${escapeHtml(img.id)}">
       <a class="frame__img" href="/images/${escapeHtml(img.id)}" target="_blank" rel="noopener">
         ${preview}
       </a>
@@ -222,7 +293,7 @@ export function dashboardPage({
 <meta name="robots" content="noindex,nofollow">
 <title>Images &middot; ${escapeHtml(siteName)}</title>
 ${FONTS}
-<style>
+<style nonce="${escapeHtml(nonce)}">
 ${TOKENS}
 .page{max-width:1120px;margin:0 auto;padding:64px 20px 72px}
 
@@ -346,12 +417,35 @@ header.top{
 .empty p{margin:0;font-size:14px}
 .pager{display:flex;gap:10px;justify-content:center;margin-top:36px}
 .pager .btn{text-decoration:none}
+
+/* glass */
+.page{padding-top:28px}
+header.top{border-bottom:0;border-radius:20px;padding:20px 24px;margin-bottom:22px}
+.signout{border-bottom-color:rgba(26,42,54,.15)}
+.drop{border-radius:20px}
+.drop.is-hot{background:rgba(232,240,241,.85);border-color:var(--primary-color)}
+.drop__title,.finder__input{border-radius:12px;background:var(--field-bg);border-color:var(--field-border)}
+.drop__title:focus,.finder__input:focus{border-color:var(--primary-color);background:var(--primary-color-200)}
+.finder .btn{border-radius:12px}
+.frame{border-radius:18px;overflow:hidden}
+.frame:hover{
+  border-color:rgba(10,161,214,.55);
+  box-shadow:0 1px 2px rgba(26,42,54,.04),0 12px 30px rgba(10,161,214,.14);
+}
+.frame.is-private{border-left:3px solid var(--secondary-color)}
+.frame__img{background:rgba(10,161,214,.08)}
+.frame__title{border-radius:8px}
+.frame__url{border-radius:8px;background:rgba(255,255,255,.6);border-color:var(--field-border)}
+.frame__actions .btn{border-radius:8px}
+.tag{border-radius:999px}
+.tag--public{background:rgba(10,161,214,.12);border-color:rgba(10,161,214,.4)}
+.empty{border-radius:20px}
 </style>
 </head>
 <body>
 <div class="page">
 
-  <header class="top">
+  <header class="top glass">
     <div>
       <span class="eyebrow">${escapeHtml(siteName)} &middot; ${escapeHtml(user.username)}</span>
       <h1>Hosted images</h1>
@@ -367,7 +461,7 @@ header.top{
     </div>
   </header>
 
-  <section class="drop" id="drop">
+  <section class="drop glass" id="drop">
     <h2>Add images</h2>
     <p>Drop files here, paste from the clipboard, or choose them manually.<br>PNG, JPEG, GIF, WebP, AVIF, MP4 and WebM.</p>
     <input class="drop__title" id="uptitle" type="text" maxlength="120"
@@ -393,7 +487,7 @@ header.top{
   <div id="status" role="status" aria-live="polite"></div>
 
   ${images.length ? `<div class="sheet">${frames}</div>` : `
-  <div class="empty">
+  <div class="empty glass">
     <h2>${search ? 'No matches' : 'Nothing here yet'}</h2>
     <p>${search
       ? 'Nothing matched that search. Try a different term, or clear it to see everything.'
@@ -407,7 +501,7 @@ header.top{
 
 </div>
 
-<script>
+<script nonce="${escapeHtml(nonce)}">
 (function(){
   var CSRF = ${JSON.stringify(csrf)};
   var status = document.getElementById('status');

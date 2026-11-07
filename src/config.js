@@ -57,15 +57,20 @@ export const config = {
   trustProxy: (env.TRUST_PROXY || 'true') !== 'false',
 
   // Number of proxies between the client and this app. Caddy alone is 1;
-  // Cloudflare Tunnel -> cloudflared -> Caddy is 2.
-  proxyHops: parseInt(env.PROXY_HOPS || '2', 10),
+  // Cloudflare Tunnel -> cloudflared -> Caddy is 2. Defaults to 1: if it is
+  // set higher than the real number of proxies, the leftmost (client-written)
+  // part of X-Forwarded-For is believed, and a visitor can pick their own IP.
+  proxyHops: parseInt(env.PROXY_HOPS || '1', 10),
 
   // When traffic arrives via Cloudflare, CF-Connecting-IP is the single
   // authoritative client address. Cloudflare overwrites it at the edge, so
   // it cannot be forged by a client -- PROVIDED the origin is only ever
   // reachable through the tunnel. If you also expose ports 80/443 directly,
   // set TRUST_CLOUDFLARE=false, because then anyone could set the header.
-  trustCloudflare: (env.TRUST_CLOUDFLARE || 'true') !== 'false',
+  // Off by default: switched on without Cloudflare in front, any visitor
+  // could send their own CF-Connecting-IP and dodge the login throttle or
+  // get someone else's address banned by fail2ban.
+  trustCloudflare: env.TRUST_CLOUDFLARE === 'true',
 
   // In-process throttle, a cheap first line of defence before fail2ban.
   loginWindowMs: parseInt(env.LOGIN_WINDOW_MS || String(15 * 60 * 1000), 10),
@@ -74,12 +79,27 @@ export const config = {
   // Shown in the page title and above the login form.
   siteName: env.SITE_NAME || 'Image store',
 
+  // Username/password sign-in. Set PASSWORD_LOGIN=false for an SSO-only
+  // install: the form is hidden and POST /images/login answers 404.
+  passwordLogin: env.PASSWORD_LOGIN !== 'false',
+
+  // "shared": every signed-in account sees and manages every image (one
+  // library for a few trusted people -- the original behaviour).
+  // "per-user": each account only sees, edits and deletes its own uploads,
+  // and private images are visible to their uploader only. Use per-user
+  // whenever accounts are created automatically by single sign-on.
+  libraryMode: env.LIBRARY_MODE || 'shared',
+
   isProduction: env.NODE_ENV === 'production',
 
-  // Optional single sign-on via any OpenID Connect provider (authentik,
-  // Keycloak, Authelia, Google Workspace, Okta...). Off unless all three of
-  // issuer/client id/client secret are set. This never creates accounts by
-  // itself -- see src/oidc.js for why.
+  // Optional single sign-on. Two ways to configure it, usable together:
+  //  * OIDC_PROVIDERS_FILE: a JSON file listing any number of OpenID Connect
+  //    and OAuth2 providers (authentik, Keycloak, Google, GitHub, ...). See
+  //    src/providers.js and deploy/oidc-providers.example.json.
+  //  * The OIDC_* variables below: one OpenID Connect provider, configured
+  //    the way earlier versions did it. Off unless issuer, client id and
+  //    client secret are all set.
+  oidcProvidersFile: env.OIDC_PROVIDERS_FILE || '',
   oidc: {
     enabled: Boolean(env.OIDC_ISSUER_URL && env.OIDC_CLIENT_ID && env.OIDC_CLIENT_SECRET),
     // No trailing-slash normalization here: OIDC discovery requires the
@@ -143,18 +163,9 @@ if (config.isProduction && config.sessionSecret === 'dev-only-insecure-secret') 
   throw new Error('Refusing to start in production with the default SESSION_SECRET.');
 }
 
-/* ------------------------------------------------------------------ *
- * The OAuth redirect_uri must be a fixed address the app itself controls,
- * never one built from the request's Host header. If it were request-
- * derived, a forged Host header could redirect the authorization code
- * somewhere else and hijack the login. PUBLIC_ORIGIN is the only source
- * for it, so OIDC refuses to start without one.
- * ------------------------------------------------------------------ */
-if (config.oidc.enabled && !config.publicOrigin) {
-  throw new Error(
-    'OIDC is configured (OIDC_ISSUER_URL/OIDC_CLIENT_ID/OIDC_CLIENT_SECRET) but '
-    + 'PUBLIC_ORIGIN is not set. Set PUBLIC_ORIGIN, e.g. https://example.com -- it '
-    + 'must exactly match the redirect URI registered with your identity provider: '
-    + '<PUBLIC_ORIGIN>/images/oidc/callback'
-  );
+if (!['shared', 'per-user'].includes(config.libraryMode)) {
+  throw new Error(`LIBRARY_MODE must be "shared" or "per-user", not "${config.libraryMode}".`);
+}
+if (!Number.isInteger(config.proxyHops) || config.proxyHops < 0) {
+  throw new Error('PROXY_HOPS must be a whole number (0 or more).');
 }
