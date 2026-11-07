@@ -33,5 +33,8 @@ if (password.length < 12) {
   process.exit(1);
 }
 q.updatePassword.run(hashPassword(password), username);
-console.log(`Password updated for "${username}".`);
+// A new password should lock out anyone holding an old session -- usually
+// the reason for changing it. Before 1.2 existing sessions stayed valid.
+const ended = q.deleteSessionsForUser.run(q.userByName.get(username).id).changes;
+console.log(`Password updated for "${username}".${ended ? ` Signed out ${ended} existing session(s).` : ''}`);
 process.exit(0);

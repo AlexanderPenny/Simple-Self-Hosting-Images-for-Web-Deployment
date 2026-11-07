@@ -12,7 +12,14 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-import { q } from '../src/db.js';
+import { db, q } from '../src/db.js';
+
+// Changing (or removing) the email also drops every single sign-on link, so
+// the account re-links fresh -- by the new address -- on its next SSO sign-in.
+const setEmail = db.transaction((value, name) => {
+  q.setEmail.run(value, name);
+  q.deleteLinksForUser.run(q.userByName.get(name).id);
+});
 
 const username = process.argv[2];
 const email = process.argv[3];
@@ -28,8 +35,8 @@ if (!q.userByName.get(username)) {
 }
 
 if (email === '--') {
-  q.setEmail.run(null, username);
-  console.log(`Removed SSO email from "${username}". They can still sign in with a password.`);
+  setEmail(null, username);
+  console.log(`Removed the email and all SSO links from "${username}". They can still sign in with a password.`);
   process.exit(0);
 }
 
@@ -37,11 +44,11 @@ if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
   console.error(`"${email}" does not look like an email address.`);
   process.exit(1);
 }
-const existing = q.userByEmail.get(email);
+const existing = q.userByEmailAny.get(email);
 if (existing && existing.username !== username) {
   console.error(`"${email}" is already used by "${existing.username}".`);
   process.exit(1);
 }
 
-q.setEmail.run(email, username);
-console.log(`"${username}" can now sign in via SSO using ${email}.`);
+setEmail(email, username);
+console.log(`"${username}" can now sign in via SSO using ${email} (any previous SSO links were cleared).`);

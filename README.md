@@ -30,9 +30,15 @@ format fail2ban parses, with ready-made filters and jails included.
 stays on the system disk — worth doing if you are running from an SD card.
 * **No build step, few dependencies.** Express, multer, better-sqlite3,
 cookie-parser. Server-rendered HTML, no framework, no bundler.
-* **Optional SSO.** Point it at any OpenID Connect provider — authentik,
-Keycloak, Authelia, Google, Okta — on top of password login. Never
-auto-creates accounts.
+* **Single sign-on, as many providers as you like.** Any OpenID Connect
+provider (authentik, Keycloak, Authelia, Google, GitLab, Microsoft Entra…) and
+plain OAuth2 ones like GitHub and Discord, each with its own button. Accounts
+are linked by email, or created on first sign-in if you allow it, with
+per-provider rules on who may sign in. See the [wiki](https://github.com/AlexanderPenny/Simple-Self-Hosting-Images-for-Web-Deployment/wiki/Single-sign-on).
+* **Shared or per-user libraries.** One library for a few trusted people, or
+each account sees and manages only its own uploads.
+* **A clean, light look.** Frosted-glass panels on a soft blue background,
+with solid fallbacks when the browser or visitor turns transparency off.
 
 ---
 
@@ -48,7 +54,7 @@ auto-creates accounts.
 ## Quick start
 
 ```bash
-git clone https://github.com/YOURNAME/contactsheet.git
+git clone https://github.com/AlexanderPenny/Simple-Self-Hosting-Images-for-Web-Deployment.git contactsheet
 cd contactsheet
 npm install --omit=dev
 
@@ -103,13 +109,18 @@ Put this **above** any catch-all route, or the catch-all wins and `/images`
 never reaches the app.
 
 Behind Cloudflare, pass the real visitor address through so bans hit the right
-IP:
+IP, and set `TRUST_CLOUDFLARE=true` (plus `PROXY_HOPS=2` for a Cloudflare
+Tunnel → Caddy setup):
 
 ```
 	reverse_proxy 127.0.0.1:3021 {
 		header_up CF-Connecting-IP {header.CF-Connecting-IP}
 	}
 ```
+
+**Only do this if the server cannot be reached except through Cloudflare.**
+Otherwise anyone can send their own `CF-Connecting-IP` header and choose the
+address that gets logged — dodging bans, or getting someone else banned.
 
 nginx equivalent:
 
@@ -183,14 +194,17 @@ file readable only by root, e.g. `/etc/contactsheet.env`.
 |`MAX_FILES_PER_UPLOAD`|`10`|Files per submission|
 |`ID_LENGTH`|`10`|Characters in a generated ID|
 |`TRUST_PROXY`|`true`|Read the client IP from proxy headers|
-|`PROXY_HOPS`|`2`|Proxies in front. Caddy alone is 1; Cloudflare Tunnel → Caddy is 2|
-|`TRUST_CLOUDFLARE`|`true`|Use `CF-Connecting-IP`. **Set false if the origin is reachable without Cloudflare**|
+|`PROXY_HOPS`|`1`|Proxies in front. Caddy alone is 1; Cloudflare Tunnel → Caddy is 2. **Never higher than the real number** (was `2` before 1.2)|
+|`TRUST_CLOUDFLARE`|`false`|Use `CF-Connecting-IP`. **Only set true if the origin cannot be reached without Cloudflare** (was `true` before 1.2)|
 |`LOGIN_MAX_ATTEMPTS`|`10`|In-process throttle threshold|
-|`OIDC_ISSUER_URL`|*(unset)*|Enables SSO. Your provider's issuer URL, e.g. `https://auth.example.com/application/o/contactsheet/`|
-|`OIDC_CLIENT_ID`|*(unset)*|Client ID registered with the provider|
-|`OIDC_CLIENT_SECRET`|*(unset)*|Client secret registered with the provider|
-|`OIDC_SCOPES`|`openid email profile`|Scopes requested at the provider|
-|`OIDC_BUTTON_LABEL`|`Single sign-on`|Text on the login page's SSO button|
+|`LIBRARY_MODE`|`shared`|`shared`: every account sees and manages every image. `per-user`: each account only its own, and private images only to their uploader|
+|`PASSWORD_LOGIN`|`true`|`false` hides the username/password form, for SSO-only installs|
+|`OIDC_PROVIDERS_FILE`|*(unset)*|JSON file listing any number of SSO providers. See the [provider reference](https://github.com/AlexanderPenny/Simple-Self-Hosting-Images-for-Web-Deployment/wiki/Provider-configuration)|
+|`OIDC_ISSUER_URL`|*(unset)*|One OIDC provider without a file (the pre-1.2 way). Issuer URL, e.g. `https://auth.example.com/application/o/contactsheet/`|
+|`OIDC_CLIENT_ID`|*(unset)*|Client ID for that provider|
+|`OIDC_CLIENT_SECRET`|*(unset)*|Client secret for that provider|
+|`OIDC_SCOPES`|`openid email profile`|Scopes requested from that provider|
+|`OIDC_BUTTON_LABEL`|`Single sign-on`|Text on that provider's button|
 
 ---
 
@@ -199,8 +213,8 @@ file readable only by root, e.g. `/etc/contactsheet.env`.
 ```bash
 node scripts/adduser.js alice     # create
 node scripts/passwd.js alice      # change password
-node scripts/lsusers.js           # list
-node scripts/setemail.js alice alice@example.com   # enable SSO for alice
+node scripts/lsusers.js           # list, with each account's SSO links
+node scripts/setemail.js alice alice@example.com   # let alice link SSO by that email
 ```
 
 Run these as the service user in production:
@@ -210,54 +224,65 @@ cd /opt/contactsheet
 sudo -u contactsheet node scripts/adduser.js alice
 ```
 
+Changing a password signs that account out everywhere. Changing or removing an
+email with `setemail.js` also removes the account's SSO links, so it re-links
+by the new address next time.
+
 There is no signup page and no password reset by design — this is meant for a
-handful of people you know.
+handful of people you know. (Single sign-on can create accounts on first
+sign-in if you switch that on per provider.)
 
 ---
 
-## Single sign-on (OIDC)
+## Single sign-on
 
-Password login always works. On top of it you can enable SSO through any
-OpenID Connect provider — authentik, Keycloak, Authelia, Google Workspace,
-Okta, Azure AD, anything that speaks standard OIDC. This is the same
-relationship as pointing Gitea's "OAuth2 / OpenID Connect" authentication
-source at an IdP: the provider verifies who someone is, this app decides
-what they can do.
+Password login works on its own. On top of it — or instead of it, with
+`PASSWORD_LOGIN=false` — you can add any number of sign-in providers, each
+with its own button:
 
-**It never creates accounts.** SSO only signs a visitor into a local account
-that already exists — matched by email — so a provider that lets people
-self-register, or a misconfigured "everyone" group, can never hand out
-access on its own. An admin still has to opt each user in.
+* **OpenID Connect:** authentik, Keycloak, Authelia, Pocket ID, Zitadel,
+  Google, GitLab, Microsoft Entra ID, Okta, Auth0…
+* **Plain OAuth2:** GitHub, Discord, or anything with a userinfo endpoint.
 
-1. Register this app as a client/application with your provider. You will
-   need its client ID and secret, and it will ask for a redirect URI — that
-   is exactly `<PUBLIC_ORIGIN>/images/oidc/callback`.
-2. Set the environment variables (see Configuration below):
-   ```
-   PUBLIC_ORIGIN=https://example.com
-   OIDC_ISSUER_URL=https://auth.example.com/application/o/contactsheet/
-   OIDC_CLIENT_ID=...
-   OIDC_CLIENT_SECRET=...
-   ```
-   `PUBLIC_ORIGIN` must be set to a fixed address when OIDC is enabled — the
-   app refuses to start otherwise. The redirect URI has to be a trusted,
-   unchanging value; deriving it from the request's `Host` header would let
-   a forged header redirect the login flow elsewhere.
-3. Link a local account to an email address:
-   ```bash
-   node scripts/setemail.js alice alice@example.com
-   ```
-   That email must match what your provider's `email` claim will send for
-   that person. `node scripts/setemail.js alice --` removes the link.
-4. Restart the service. A "Single sign-on" button now appears on the login
-   page.
+They go in a JSON file named by `OIDC_PROVIDERS_FILE`:
 
-The first successful SSO sign-in pins the account to that provider's stable
-subject identifier, not just the email — so if someone else's account is
-later given the same address at the IdP, or the email is reassigned, it
-cannot silently take over access. Changing a user's email with
-`scripts/setemail.js` clears that pin, so the account re-links fresh on the
-next SSO sign-in.
+```json
+{
+  "providers": [
+    {
+      "id": "authentik",
+      "label": "Sign in with authentik",
+      "issuer": "https://auth.example.com/application/o/contactsheet/",
+      "clientId": "…",
+      "clientSecretEnv": "AUTHENTIK_CLIENT_SECRET"
+    },
+    { "id": "github", "preset": "github", "clientId": "…", "clientSecretEnv": "GITHUB_CLIENT_SECRET" }
+  ]
+}
+```
+
+Register `<PUBLIC_ORIGIN>/images/oidc/<id>/callback` as the redirect URI at
+each provider. `PUBLIC_ORIGIN` must be set; the app refuses to start without
+it, because a redirect URI built from the request's `Host` header could be
+forged to send the login somewhere else.
+
+**Who gets in is up to you, per provider.** By default SSO only signs people in
+to accounts that already exist here, matched by a *verified* email you set
+with `scripts/setemail.js`, so a provider that lets anyone register can
+never hand out access by itself. You can also switch on `autoCreate` and limit it
+with `allowedEmails`, `allowedEmailDomains` or `requiredGroups`. After the
+first sign-in an account is pinned to that provider's permanent subject ID,
+so a reassigned email cannot take it over.
+
+The old single-provider variables (`OIDC_ISSUER_URL`, `OIDC_CLIENT_ID`,
+`OIDC_CLIENT_SECRET`) still work, and keep their old redirect URI
+`<PUBLIC_ORIGIN>/images/oidc/callback`.
+
+**Full documentation is on the wiki:**
+[Single sign-on](https://github.com/AlexanderPenny/Simple-Self-Hosting-Images-for-Web-Deployment/wiki/Single-sign-on) ·
+[Provider configuration](https://github.com/AlexanderPenny/Simple-Self-Hosting-Images-for-Web-Deployment/wiki/Provider-configuration) ·
+[Provider guides](https://github.com/AlexanderPenny/Simple-Self-Hosting-Images-for-Web-Deployment/wiki/Provider-guides) (authentik, Keycloak, Authelia, Google,
+GitLab, Microsoft Entra, GitHub, Discord).
 
 ---
 
@@ -307,8 +332,9 @@ if it matters. Images that were private from the start are sent with
 * **Private images will not render when embedded elsewhere.** The session cookie
 is `SameSite=Lax`, so it is not sent with cross-site subresource requests.
 Intended, but surprising if you forget.
-* **Private is access control, not encryption.** Anyone with server access, and
-any other signed-in user, can read the file.
+* **Private is access control, not encryption.** Anyone with server access can
+read the file — and so can any other signed-in user, unless
+`LIBRARY_MODE=per-user`, which limits private images to their uploader.
 
 ---
 
@@ -333,7 +359,19 @@ session. Rasterise before uploading.
 
 **Sessions** are opaque random tokens stored server-side and signed with an
 HMAC. Cookies are `HttpOnly`, `SameSite=Lax`, `Secure` in production, scoped to
-`/images`. State-changing requests carry a CSRF token.
+`/images`. State-changing requests carry a CSRF token, including the sign-in
+form, whose token is tied to a per-browser cookie.
+
+**Pages** are sent with a strict Content-Security-Policy (scripts and styles
+run only with a per-response nonce) and `frame-ancestors 'none'` /
+`X-Frame-Options: DENY`, so the dashboard cannot be framed for clickjacking.
+
+**Single sign-on** uses the authorization code flow with PKCE, a random state
+and (for OIDC) a nonce, all bound to the browser by a signed short-lived
+cookie that also names the provider, so a code from one provider cannot be
+replayed at another's callback. Provider config is validated strictly at
+startup: an unknown or misspelt setting stops the app rather than being
+silently ignored.
 
 **Addresses are unguessable but not secret.** Anyone with the link can view a
 public image. Treat it like a Google Drive "anyone with the link" share.
@@ -372,6 +410,24 @@ sudo systemctl restart contactsheet
 Schema changes are applied automatically at startup and logged as
 `[migration] …`. New columns are added with defaults that preserve existing
 behaviour — an upgrade never changes who can see what.
+
+**Upgrading to 1.2 — check your proxy settings.** The defaults for
+`TRUST_CLOUDFLARE` (now `false`) and `PROXY_HOPS` (now `1`) changed, because the
+old ones let visitors fake their IP on any install not behind Cloudflare. If
+you *are* behind Cloudflare and never set them, add `TRUST_CLOUDFLARE=true`
+and `PROXY_HOPS=2` (Tunnel → Caddy) to your service before restarting, or
+every visitor will be logged as your proxy's address. The supplied
+`deploy/contactsheet.service` already sets both. Everything in 1.2, including
+the security fixes, is listed in [CHANGELOG.md](CHANGELOG.md).
+
+---
+
+## Tests
+
+```bash
+npm test               # end-to-end smoke test of the main paths
+npm run test:sso       # single sign-on against a throwaway local provider (needs openssl)
+```
 
 ---
 

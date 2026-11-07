@@ -26,8 +26,12 @@ example.com {
 		}
 
 		reverse_proxy 127.0.0.1:3021 {
-			# Pass Cloudflare's client IP through unchanged. The app reads
-			# CF-Connecting-IP and writes it to the log fail2ban watches.
+			# ONLY behind Cloudflare: pass its client IP through unchanged.
+			# The app reads CF-Connecting-IP (with TRUST_CLOUDFLARE=true) and
+			# writes it to the log fail2ban watches. If this server can be
+			# reached without going through Cloudflare, delete these two
+			# lines and leave TRUST_CLOUDFLARE unset -- anyone could
+			# otherwise send their own CF-Connecting-IP.
 			header_up CF-Connecting-IP {header.CF-Connecting-IP}
 			header_up X-Real-IP {header.CF-Connecting-IP}
 		}

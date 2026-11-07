@@ -16,7 +16,8 @@ import { q } from '../src/db.js';
 const rows = q.listUsers.all();
 if (!rows.length) console.log('No users yet. Create one with: npm run adduser -- <username>');
 for (const u of rows) {
-  const sso = u.email ? `  sso=${u.email}${u.oidc_subject ? ' (linked)' : ' (not yet used)'}` : '';
+  const links = q.linksForUser.all(u.id).map((l) => l.provider);
+  const sso = (u.email ? `  email=${u.email}` : '') + (links.length ? `  sso=${links.join(',')}` : '');
   console.log(`${String(u.id).padStart(3)}  ${u.username.padEnd(24)} created ${new Date(u.created_at).toISOString().slice(0,10)}${u.disabled ? '  [disabled]' : ''}${sso}`);
 }
 process.exit(0);

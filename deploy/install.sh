@@ -50,6 +50,10 @@ PORT="$(ask 'Port to listen on' '3021')"
 ORIGIN="$(ask 'Public address (blank to derive from requests)' '')"
 SITE_NAME="$(ask 'Site name shown on the login page' 'Image store')"
 STORE_DIR="$(ask 'Image store directory (blank = inside the data directory)' '')"
+BEHIND_CF="$(ask 'Is the site behind Cloudflare (Tunnel or orange-cloud DNS)? y/n' 'n')"
+if [[ "$BEHIND_CF" =~ ^[Yy] ]]; then
+  CF_TUNNEL="$(ask 'Through a Cloudflare Tunnel (cloudflared) to your proxy? y/n' 'y')"
+fi
 
 REQUIRE_MARKER=false
 if [ -n "$STORE_DIR" ]; then
@@ -140,8 +144,19 @@ Environment=NODE_ENV=production
 Environment=PORT=$PORT
 Environment=BIND_HOST=127.0.0.1
 Environment=DATA_DIR=$DATA_DIR
-Environment=SITE_NAME=$SITE_NAME
+Environment="SITE_NAME=$SITE_NAME"
+Environment=TRUST_PROXY=true
 UNIT_BODY
+
+  # How the real visitor IP reaches the app. Wrong values let visitors pick
+  # their own IP (dodging the throttle and fail2ban, or framing others).
+  if [[ "$BEHIND_CF" =~ ^[Yy] ]]; then
+    echo "Environment=TRUST_CLOUDFLARE=true"
+    if [[ "${CF_TUNNEL:-y}" =~ ^[Yy] ]]; then echo "Environment=PROXY_HOPS=2"; else echo "Environment=PROXY_HOPS=1"; fi
+  else
+    echo "Environment=TRUST_CLOUDFLARE=false"
+    echo "Environment=PROXY_HOPS=1"
+  fi
 
   [ -n "$ORIGIN" ]    && echo "Environment=PUBLIC_ORIGIN=$ORIGIN"
   [ -n "$STORE_DIR" ] && echo "Environment=STORE_DIR=$STORE_DIR"
@@ -226,9 +241,9 @@ cat <<NEXT
   Auth log for fail2ban:  $DATA_DIR/log/auth.log
   Health check:           curl -s localhost:$PORT/healthz
 
-  Optional: single sign-on via authentik/Keycloak/etc. See README.md
-  "Single sign-on (OIDC)" -- it needs PUBLIC_ORIGIN set, so do that first
-  if you plan to use it.
+  Optional: single sign-on (authentik, Keycloak, Google, GitHub ...).
+  See the wiki page "Single sign-on" -- it needs PUBLIC_ORIGIN set, so do
+  that first if you plan to use it.
 NEXT
 
 if [ -n "$STORE_DIR" ] && [ "$REQUIRE_MARKER" = true ]; then

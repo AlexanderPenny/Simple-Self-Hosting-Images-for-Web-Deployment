@@ -38,19 +38,30 @@ Environment=DATA_DIR=/var/lib/contactsheet
 Environment=STORE_DIR=/mnt/usb/contactsheet/store
 Environment=REQUIRE_STORE_MARKER=true
 Environment=TRUST_PROXY=true
+# These two are for Cloudflare Tunnel -> cloudflared -> Caddy -> app. EDIT if
+# that is not your setup: with Caddy (or nginx) alone in front use
+# PROXY_HOPS=1 and TRUST_CLOUDFLARE=false. Getting them wrong lets visitors
+# choose their own IP address, dodging bans or getting others banned.
 Environment=PROXY_HOPS=2
 Environment=TRUST_CLOUDFLARE=true
+# shared = every account sees every image; per-user = each sees only its own.
+#Environment=LIBRARY_MODE=per-user
+# Hide the username/password form when everyone signs in with SSO.
+#Environment=PASSWORD_LOGIN=false
 Environment=MAX_UPLOAD_BYTES=12582912
 Environment=MAX_FILES_PER_UPLOAD=10
 
-# Optional SSO against any OpenID Connect provider. Leave unset to use
-# password-only login. See README.md "Single sign-on (OIDC)" before
-# enabling -- PUBLIC_ORIGIN above must be set to a fixed address, and each
-# user still needs `node scripts/setemail.js` run for them once.
+# Optional single sign-on (OIDC and OAuth2: authentik, Keycloak, Google,
+# GitHub ...). Leave unset for password-only login. See the wiki page
+# "Single sign-on" -- PUBLIC_ORIGIN above must be set to a fixed address.
+# Any number of providers, from a JSON file:
+#Environment=OIDC_PROVIDERS_FILE=/etc/contactsheet/oidc-providers.json
+# ...or one OIDC provider the pre-1.2 way:
 #Environment=OIDC_ISSUER_URL=https://auth.example.com/application/o/contactsheet/
 #Environment=OIDC_CLIENT_ID=
-# OIDC_CLIENT_SECRET is not set here -- add it to /etc/contactsheet.env
-# below instead, which is not world-readable the way this unit file is.
+# Client secrets do not go here -- put them in /etc/contactsheet.env below
+# (OIDC_CLIENT_SECRET=..., or whatever clientSecretEnv names), which is not
+# world-readable the way this unit file is.
 
 # Generate with: openssl rand -base64 48
 EnvironmentFile=/etc/contactsheet.env
@@ -61,6 +72,7 @@ PrivateTmp=true
 ProtectSystem=strict
 ProtectHome=true
 ReadWritePaths=/var/lib/contactsheet /mnt/usb/contactsheet
+# The providers file and any clientSecretFile only need to be readable.
 ProtectKernelTunables=true
 ProtectKernelModules=true
 ProtectControlGroups=true

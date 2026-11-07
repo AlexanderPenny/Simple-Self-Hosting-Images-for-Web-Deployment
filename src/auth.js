@@ -174,12 +174,42 @@ export function currentUser(req) {
 }
 
 /* ------------------------------------------------------------------ *
- * CSRF — double-submit token bound to the session cookie.
+ * CSRF — token bound to the session cookie, or before sign-in to a
+ * random per-browser cookie.
+ *
+ * Before 1.2 every signed-out visitor got the same token (an HMAC of the
+ * word "anonymous"), so any site could fetch it once and post a hidden
+ * form to /images/login, signing the victim's browser in to the
+ * attacker's account ("login CSRF"): their next uploads would land in an
+ * account the attacker controls. The pre-session cookie makes the token
+ * unique to each browser.
  * ------------------------------------------------------------------ */
 
-export function csrfToken(req) {
-  const sid = readCookieValue(req.cookies?.[SESSION_COOKIE]) || 'anonymous';
-  return crypto.createHmac('sha256', config.sessionSecret).update(`csrf:${sid}`).digest('base64url');
+const PRE_COOKIE = 'apimg_pre';
+
+function preSessionId(req, res) {
+  if (req.preSessionId) return req.preSessionId;
+  let id = readCookieValue(req.cookies?.[PRE_COOKIE]);
+  if (!id && res) {
+    id = crypto.randomBytes(18).toString('base64url');
+    res.cookie(PRE_COOKIE, makeCookieValue(id), {
+      httpOnly: true,
+      secure: config.isProduction,
+      sameSite: 'lax',
+      path: '/images',
+    });
+  }
+  req.preSessionId = id || null;
+  return req.preSessionId;
+}
+
+// Pass `res` when rendering a form, so a first-time visitor gets the cookie
+// the token is bound to. Without `res` (checking a submission) no cookie is
+// created, and a request that never had one cannot match.
+export function csrfToken(req, res) {
+  const sid = readCookieValue(req.cookies?.[SESSION_COOKIE]);
+  const key = sid ? `csrf:${sid}` : `csrf-pre:${preSessionId(req, res) || crypto.randomBytes(18).toString('base64url')}`;
+  return crypto.createHmac('sha256', config.sessionSecret).update(key).digest('base64url');
 }
 
 export function checkCsrf(req) {

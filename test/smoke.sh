@@ -159,6 +159,74 @@ curl -s -b "$JAR" -X DELETE "$BASE/images/$ID" -H "X-CSRF-Token: $C" >/dev/null
 check "deleted image gone" \
   "$(curl -s -b "$JAR" -o /dev/null -w '%{http_code}' "$BASE/images/$ID")" "404"
 
+# --- page hardening ---
+H="$(curl -sI "$BASE/images")"
+check "pages send a nonce-based CSP" \
+  "$(echo "$H" | grep -ci "^content-security-policy:.*script-src 'nonce-")" "1"
+check "pages refuse to be framed" \
+  "$(echo "$H" | grep -ci '^x-frame-options: DENY')" "1"
+check "inline script carries the nonce" \
+  "$(curl -s -b "$JAR" "$BASE/images" | grep -c '<script nonce="')" "1"
+
+# --- login CSRF: the signed-out token is unique to each browser ---
+JAR2="$TMP/cookies2"
+T1="$(curl -s -c "$JAR2" "$BASE/images" | grep -o 'name="_csrf" value="[^"]*"' | sed 's/.*value="//;s/"//')"
+T2="$(curl -s "$BASE/images" | grep -o 'name="_csrf" value="[^"]*"' | sed 's/.*value="//;s/"//')"
+check "two visitors get different sign-in tokens" "$([ "$T1" != "$T2" ] && echo differ || echo same)" "differ"
+check "sign-in token is useless without its cookie" \
+  "$(curl -s -o /dev/null -w '%{http_code}' -X POST "$BASE/images/login" \
+     -d "_csrf=$T1&username=smoke&password=smoke-password-123")" "401"
+check "sign-in token works with its cookie" \
+  "$(curl -s -b "$JAR2" -o /dev/null -w '%{http_code}' -X POST "$BASE/images/login" \
+     -d "_csrf=$T1&username=smoke&password=smoke-password-123")" "302"
+
+kill "$APP_PID" 2>/dev/null; wait "$APP_PID" 2>/dev/null
+
+# --- per-user libraries and SSO-only mode (second start, same data) ---
+node -e "
+import('$ROOT/src/db.js').then(async (m) => {
+  const { hashPassword } = await import('$ROOT/src/auth.js');
+  m.q.insertUser.run('other', hashPassword('other-password-123'), null, Date.now());
+  process.exit(0);
+});
+" || { echo "  FAIL  could not seed second user"; exit 1; }
+
+LIBRARY_MODE=per-user node "$ROOT/src/server.js" > "$TMP/server2.log" 2>&1 &
+APP_PID=$!
+for _ in $(seq 1 40); do curl -sf "$BASE/healthz" >/dev/null 2>&1 && break; sleep 0.25; done
+
+login() { # login <jar> <user> <password>
+  local t; t="$(curl -s -c "$1" "$BASE/images" | grep -o 'name="_csrf" value="[^"]*"' | sed 's/.*value="//;s/"//')"
+  curl -s -b "$1" -c "$1" -o /dev/null -X POST "$BASE/images/login" -d "_csrf=$t&username=$2&password=$3"
+}
+JA="$TMP/ja"; JB="$TMP/jb"
+login "$JA" smoke smoke-password-123
+login "$JB" other other-password-123
+CA="$(curl -s -b "$JA" "$BASE/images" | grep -o 'CSRF = "[^"]*"' | sed 's/CSRF = "//;s/"//')"
+CB="$(curl -s -b "$JB" "$BASE/images" | grep -o 'CSRF = "[^"]*"' | sed 's/CSRF = "//;s/"//')"
+PID_="$(curl -s -b "$JA" -X POST "$BASE/images/upload" -H "X-CSRF-Token: $CA" \
+        -F "visibility=private" -F "images=@$TMP/pic.png" | grep -o '"id":"[^"]*"' | head -1 | sed 's/"id":"//;s/"//')"
+check "per-user: owner sees own private image" \
+  "$(curl -s -b "$JA" -o /dev/null -w '%{http_code}' "$BASE/images/$PID_")" "200"
+check "per-user: other account cannot view it" \
+  "$(curl -s -b "$JB" -o /dev/null -w '%{http_code}' "$BASE/images/$PID_")" "404"
+check "per-user: other account does not list it" \
+  "$(curl -s -b "$JB" "$BASE/images" | grep -c "$PID_")" "0"
+check "per-user: other account cannot delete it" \
+  "$(curl -s -b "$JB" -o /dev/null -w '%{http_code}' -X DELETE "$BASE/images/$PID_" -H "X-CSRF-Token: $CB")" "404"
+check "per-user: other account cannot retitle it" \
+  "$(curl -s -b "$JB" -o /dev/null -w '%{http_code}' -X PATCH "$BASE/images/$PID_" \
+     -H "Content-Type: application/json" -H "X-CSRF-Token: $CB" -d '{"title":"x"}')" "404"
+
+kill "$APP_PID" 2>/dev/null; wait "$APP_PID" 2>/dev/null
+PASSWORD_LOGIN=false node "$ROOT/src/server.js" > "$TMP/server3.log" 2>&1 &
+APP_PID=$!
+for _ in $(seq 1 40); do curl -sf "$BASE/healthz" >/dev/null 2>&1 && break; sleep 0.25; done
+check "PASSWORD_LOGIN=false hides the form" \
+  "$(curl -s "$BASE/images" | grep -c 'name="password"')" "0"
+check "PASSWORD_LOGIN=false refuses password posts" \
+  "$(curl -s -o /dev/null -w '%{http_code}' -X POST "$BASE/images/login" -d 'username=smoke&password=x')" "404"
+
 echo
 echo "  $PASS passed, $FAIL failed"
 [ "$FAIL" -eq 0 ] || exit 1
