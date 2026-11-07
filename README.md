@@ -7,11 +7,13 @@ paste anywhere:
 https://example.com/images/kivuhRjaTZ
 ```
 
-<img width="1263" height="964" alt="image" src="https://github.com/user-attachments/assets/6036a364-228c-4cbe-a3fc-820f7761428b" />
+<img width="1263" height="964" alt="image" src="https://apenny.me.uk/images/Yd4pKEK76f.png" />
 
 The admin panel lives at `/images` behind a login. The images themselves are
 served from `/images/<id>` with no authentication — unless you mark them
 private, which you can do per image.
+
+<img width="1263" height="964" alt="image" src="https://apenny.me.uk/images/Hfr8kaxPq6.png" />
 
 Built for a Raspberry Pi sitting behind Caddy, but nothing in it is Pi-specific.
 
